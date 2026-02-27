@@ -67,8 +67,17 @@ SAMPLE_ANALYSIS_USER = """Analyze this writing sample:
 {writing_sample}
 [SAMPLE END]
 ---
-""" + (
-    f"\nContext provided by the writer: {sample_context}"
-    if sample_context
-    else "\nNo additional context was provided by the writer."
-)
+
+{context_line}"""
+
+
+def build_sample_analysis_user(writing_sample: str, sample_context: str | None = None) -> str:
+    context_line = (
+        f"Context provided by the writer: {sample_context}"
+        if sample_context
+        else "No additional context was provided by the writer."
+    )
+    return SAMPLE_ANALYSIS_USER.format(
+        writing_sample=writing_sample,
+        context_line=context_line,
+    )
