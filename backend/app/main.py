@@ -17,6 +17,7 @@ from app.routers import (
     health,
     projects,
     voice_discovery,
+    voice_profiles,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -40,3 +41,4 @@ app.include_router(projects.router, prefix="/api")
 app.include_router(generation.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(analyze_free.router, prefix="/api")
+app.include_router(voice_profiles.router, prefix="/api")
