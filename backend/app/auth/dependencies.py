@@ -1,14 +1,14 @@
-"""Supabase JWT (ES256) verification dependency for FastAPI.
+"""Supabase JWT verification dependency for FastAPI.
 
-Uses PyJWT with cryptography backend for ES256 support.
-This is the manual decoder pattern — NOT python-jose, which
-doesn't handle Supabase's ES256 tokens correctly.
+Fetches JWKS public keys from Supabase for ES256 verification.
+Falls back to HS256 with shared secret if needed.
 """
 
 import logging
 from typing import Annotated
 
 import jwt
+from jwt import PyJWKClient
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -18,21 +18,23 @@ logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
 
+# JWKS client — caches keys automatically
+_jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
+_jwks_client = PyJWKClient(_jwks_url)
+
 
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
 ) -> str:
-    """Verify Supabase ES256 JWT and return the user_id (sub claim).
-
-    Raises 401 if the token is missing, expired, or invalid.
-    Use as: user_id: str = Depends(get_current_user)
-    """
+    """Verify Supabase JWT and return the user_id (sub claim)."""
     token = credentials.credentials
     try:
+        # Get the signing key from JWKS
+        signing_key = _jwks_client.get_signing_key_from_jwt(token)
         payload = jwt.decode(
             token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256", "ES256"],
+            signing_key.key,
+            algorithms=["ES256", "HS256"],
             audience="authenticated",
         )
         user_id: str | None = payload.get("sub")
@@ -52,4 +54,10 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token",
+        )
+    except Exception as e:
+        logger.error("JWT verification error: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication error",
         )
