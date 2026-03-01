@@ -49,9 +49,12 @@ class StyleMarkers(BaseModel):
     dialogue_style: str
     pov_tendency: str
     tense_preference: str
-    dark_humor_quotient: str
+    humor_and_wit: str
+    figurative_language: str
+    structural_patterns: str
     notable_patterns: list[str]
     comparable_authors: list[str]
+    confidence_note: str
 
 
 class AnalyzeResponse(BaseModel):
