@@ -34,7 +34,7 @@ from app.prompts.profile_compiler import (
 )
 from app.prompts.sample_analysis import SAMPLE_ANALYSIS_SYSTEM, SAMPLE_ANALYSIS_USER
 from app.services import llm_service
-from app.services.supabase_client import get_supabase_client
+from app.prompts.sample_analysis import SAMPLE_ANALYSIS_SYSTEM, build_sample_analysis_user
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +58,9 @@ async def analyze_writing_sample(
     Creates an in-memory session for the subsequent interview steps.
     Retries once if the LLM returns invalid JSON.
     """
-    user_prompt = SAMPLE_ANALYSIS_USER.format(
+    user_prompt = build_sample_analysis_user(
         writing_sample=analyze_request.writing_sample,
-        sample_context=analyze_request.sample_context or "None provided",
+        sample_context=analyze_request.sample_context,
     )
 
     style_markers_dict = await _call_llm_json(
