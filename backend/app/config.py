@@ -30,7 +30,12 @@ class Settings(BaseSettings):
 
     # Application
     frontend_url: str = "https://bubwriter.com"
-    allowed_origins: list[str] = ["https://bubwriter.com"]
+    allowed_origins: list[str] = [
+        "https://bubwriter.com",
+        "https://www.bubwriter.com",
+        "https://bubwriter.vercel.app",
+        "http://localhost:3000",
+    ]
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
