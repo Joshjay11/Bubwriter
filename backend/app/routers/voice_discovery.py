@@ -34,6 +34,7 @@ from app.prompts.profile_compiler import (
 )
 from app.prompts.sample_analysis import SAMPLE_ANALYSIS_SYSTEM, SAMPLE_ANALYSIS_USER
 from app.services import llm_service
+from app.services.supabase_client import get_supabase_client
 from app.prompts.sample_analysis import SAMPLE_ANALYSIS_SYSTEM, build_sample_analysis_user
 
 logger = logging.getLogger(__name__)
