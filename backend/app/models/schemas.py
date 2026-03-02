@@ -84,26 +84,26 @@ class FinalizeRequest(BaseModel):
 
 
 class CognitiveStyle(BaseModel):
-    processing_mode: str
-    story_entry_point: str
-    revision_pattern: str
-    plotter_pantser: str
+    processing_mode: str | None = None
+    story_entry_point: str | None = None
+    revision_pattern: str | None = None
+    plotter_pantser: str | None = None
 
 
 class LiteraryDNA(BaseModel):
-    vocabulary_tier: str
-    sentence_rhythm: str
-    pacing_style: str
-    emotional_register: str
-    sensory_mode: str
-    dialogue_approach: str
-    pov_preference: str
-    tense_preference: str
-    humor_style: str
-    darkness_calibration: str
-    cognitive_style: CognitiveStyle
-    notable_patterns: list[str]
-    comparable_authors: list[str]
+    vocabulary_tier: str | None = None
+    sentence_rhythm: str | None = None
+    pacing_style: str | None = None
+    emotional_register: str | None = None
+    sensory_mode: str | None = None
+    dialogue_approach: str | None = None
+    pov_preference: str | None = None
+    tense_preference: str | None = None
+    humor_style: str | None = None
+    darkness_calibration: str | None = None
+    cognitive_style: CognitiveStyle | None = None
+    notable_patterns: list[str] = []
+    comparable_authors: list[str] = []
 
 
 class Influences(BaseModel):
