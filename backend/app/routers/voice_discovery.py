@@ -8,6 +8,7 @@ This is the core product flow:
 
 import json
 import logging
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -42,6 +43,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/voice-discovery", tags=["voice-discovery"])
 
 INTERVIEW_COMPLETE_SIGNAL = "[INTERVIEW_COMPLETE]"
+THOUGHT_OPEN_TAG = "<thought_process>"
+THOUGHT_CLOSE_TAG = "</thought_process>"
 
 
 # ---------------------------------------------------------------------------
@@ -138,17 +141,21 @@ async def conduct_interview(
     question_number = (len(session.interview_messages) // 2) + 1
 
     async def stream_interview() -> ...:
-        """Stream tokens, detect completion signal, store full response.
+        """Stream tokens, strip thought blocks, detect completion signal.
 
-        Strategy: buffer the last ~25 chars to detect the completion
-        signal without streaming it to the client. All other tokens
+        Strategy: buffer the last N chars to detect the completion
+        signal and <thought_process> tags without streaming them to
+        the client. When inside a thought block, all tokens are
+        suppressed until the closing tag is found. All other tokens
         are sent immediately.
         """
         full_response = ""
         interview_complete = False
-        # Buffer to hold tokens that might be part of the signal
+        inside_thought_block = False
+        # Buffer to hold tokens that might be part of a signal or tag
         pending_buffer = ""
         signal_len = len(INTERVIEW_COMPLETE_SIGNAL)
+        max_tag_len = max(signal_len, len(THOUGHT_OPEN_TAG), len(THOUGHT_CLOSE_TAG))
 
         try:
             async for token in llm_service.generate_stream(
@@ -159,7 +166,30 @@ async def conduct_interview(
                 full_response += token
                 pending_buffer += token
 
-                # If we've detected the signal in the buffer, stop streaming
+                # --- Inside a thought block: suppress output, watch for close tag ---
+                if inside_thought_block:
+                    if THOUGHT_CLOSE_TAG in pending_buffer:
+                        inside_thought_block = False
+                        # Discard everything up to and including the close tag
+                        pending_buffer = pending_buffer.split(THOUGHT_CLOSE_TAG, 1)[1]
+                    elif len(pending_buffer) > len(THOUGHT_CLOSE_TAG):
+                        # Trim buffer — only need enough to detect partial close tag
+                        pending_buffer = pending_buffer[-len(THOUGHT_CLOSE_TAG):]
+                    continue
+
+                # --- Not inside a thought block ---
+
+                # Check for thought_process opening tag
+                if THOUGHT_OPEN_TAG in pending_buffer:
+                    inside_thought_block = True
+                    before_tag = pending_buffer.split(THOUGHT_OPEN_TAG, 1)[0]
+                    if before_tag:
+                        yield f"data: {json.dumps({'type': 'token', 'content': before_tag})}\n\n"
+                    # Keep remainder after opening tag for close-tag detection
+                    pending_buffer = pending_buffer.split(THOUGHT_OPEN_TAG, 1)[1]
+                    continue
+
+                # Check for completion signal
                 if INTERVIEW_COMPLETE_SIGNAL in pending_buffer:
                     interview_complete = True
                     # Flush anything before the signal
@@ -169,11 +199,10 @@ async def conduct_interview(
                     pending_buffer = ""
                     continue
 
-                # If the buffer can't possibly contain the start of the signal,
-                # flush the safe portion
-                if len(pending_buffer) > signal_len:
-                    safe = pending_buffer[: -signal_len]
-                    pending_buffer = pending_buffer[-signal_len:]
+                # Flush safe portion that can't be the start of any tag/signal
+                if len(pending_buffer) > max_tag_len:
+                    safe = pending_buffer[:-max_tag_len]
+                    pending_buffer = pending_buffer[-max_tag_len:]
                     yield f"data: {json.dumps({'type': 'token', 'content': safe})}\n\n"
 
         except Exception as e:
@@ -182,11 +211,14 @@ async def conduct_interview(
             return
 
         # Flush remaining buffer (excluding signal if present)
-        if pending_buffer and not interview_complete:
+        if pending_buffer and not interview_complete and not inside_thought_block:
             yield f"data: {json.dumps({'type': 'token', 'content': pending_buffer})}\n\n"
 
-        # Clean the response for storage
-        clean_response = full_response.replace(INTERVIEW_COMPLETE_SIGNAL, "").rstrip()
+        # Clean the response for storage — strip signal and thought blocks
+        clean_response = full_response.replace(INTERVIEW_COMPLETE_SIGNAL, "")
+        clean_response = re.sub(
+            r"<thought_process>.*?</thought_process>", "", clean_response, flags=re.DOTALL
+        ).strip()
 
         # Store the assistant response in session
         session.interview_messages.append(

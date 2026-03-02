@@ -74,6 +74,26 @@ interface ProfileResult {
 
 type Step = 1 | 2 | 3 | 4 | 5;
 
+// --- Thought block filter (safety net — backend strips these, catch any leaks) ---
+
+const THOUGHT_BLOCK_RE = /<thought_process>[\s\S]*?<\/thought_process>/g;
+
+/**
+ * Strip <thought_process>...</thought_process> blocks from displayed text.
+ * If an unclosed opening tag is present (block still arriving), hide
+ * everything from the tag onward until the closing tag arrives.
+ */
+function stripThoughtBlocks(text: string): string {
+  // Remove complete thought blocks
+  let cleaned = text.replace(THOUGHT_BLOCK_RE, "");
+  // If an unclosed <thought_process> remains, hide everything after it
+  const openIdx = cleaned.indexOf("<thought_process>");
+  if (openIdx !== -1) {
+    cleaned = cleaned.substring(0, openIdx);
+  }
+  return cleaned;
+}
+
 // --- Main Component ---
 
 export default function VoiceDiscoveryPage() {
@@ -163,12 +183,16 @@ export default function VoiceDiscoveryPage() {
           { session_id: sessionId, user_message: message },
           (token) => {
             accumulated += token;
-            setStreamingText(accumulated);
+            setStreamingText(stripThoughtBlocks(accumulated));
           },
           (doneData) => {
+            // Final cleanup — strip any thought blocks from stored content
+            const cleanContent = accumulated
+              .replace(THOUGHT_BLOCK_RE, "")
+              .trim();
             setMessages((prev) => [
               ...prev,
-              { role: "assistant", content: accumulated },
+              { role: "assistant", content: cleanContent },
             ]);
             setStreamingText("");
             setQuestionNumber(doneData.question_number);
