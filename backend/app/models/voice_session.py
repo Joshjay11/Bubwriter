@@ -23,6 +23,8 @@ class VoiceSession:
     style_markers: dict
     interview_messages: list[dict[str, str]] = field(default_factory=list)
     interview_complete: bool = False
+    conversation_analysis: dict | None = None
+    conversation_stats: dict | None = None
     created_at: float = field(default_factory=time.time)
 
     def is_expired(self) -> bool:

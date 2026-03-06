@@ -13,6 +13,7 @@ from app.config import settings
 from app.routers import (
     analyze_free,
     billing,
+    conversation_import,
     generation,
     health,
     projects,
@@ -37,6 +38,7 @@ app.add_middleware(
 # Register all routers under /api
 app.include_router(health.router, prefix="/api")
 app.include_router(voice_discovery.router, prefix="/api")
+app.include_router(conversation_import.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(generation.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")

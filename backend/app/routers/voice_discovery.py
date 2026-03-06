@@ -30,13 +30,13 @@ from app.models.voice_session import (
 )
 from app.prompts.interview_conductor import INTERVIEW_START, INTERVIEW_SYSTEM
 from app.prompts.profile_compiler import (
+    CONVERSATION_ENRICHMENT_BLOCK,
     PROFILE_COMPILER_SYSTEM,
     PROFILE_COMPILER_USER,
 )
-from app.prompts.sample_analysis import SAMPLE_ANALYSIS_SYSTEM, SAMPLE_ANALYSIS_USER
+from app.prompts.sample_analysis import SAMPLE_ANALYSIS_SYSTEM, build_sample_analysis_user
 from app.services import llm_service
 from app.services.supabase_client import get_supabase_client
-from app.prompts.sample_analysis import SAMPLE_ANALYSIS_SYSTEM, build_sample_analysis_user
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +288,16 @@ async def finalize_profile(
         interview_transcript=interview_transcript,
         writing_sample_truncated=writing_sample_truncated,
     )
+
+    # Append conversation enrichment data when available
+    if session.conversation_analysis and session.conversation_stats:
+        user_prompt += CONVERSATION_ENRICHMENT_BLOCK.format(
+            message_count=session.conversation_stats.get("messages_analyzed", 0),
+            word_count=session.conversation_stats.get("words_analyzed", 0),
+            conversation_analysis_json=json.dumps(
+                session.conversation_analysis, indent=2
+            ),
+        )
 
     profile_dict = await _call_llm_json(
         system_prompt=PROFILE_COMPILER_SYSTEM,

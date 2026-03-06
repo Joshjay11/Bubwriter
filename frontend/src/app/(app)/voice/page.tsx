@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, apiInterviewStream } from "@/lib/api";
+import ConversationImport from "./components/ConversationImport";
 
 // --- Types ---
 
@@ -109,6 +110,7 @@ export default function VoiceDiscoveryPage() {
   // Step 2 state
   const [sessionId, setSessionId] = useState("");
   const [styleMarkers, setStyleMarkers] = useState<StyleMarkers | null>(null);
+  const [conversationImportDone, setConversationImportDone] = useState(false);
 
   // Step 3 state
   const [messages, setMessages] = useState<InterviewMessage[]>([]);
@@ -388,15 +390,29 @@ export default function VoiceDiscoveryPage() {
             )}
           </div>
 
-          <p className="text-zinc-400 mb-4">
-            Ready to go deeper? The interview takes about 10 minutes.
-          </p>
-          <button
-            onClick={startInterview}
-            className="w-full rounded-lg bg-zinc-100 px-6 py-3 text-zinc-900 font-medium hover:bg-zinc-200 transition-colors"
-          >
-            Start Interview
-          </button>
+          {/* Conversation Import (optional enrichment step) */}
+          {!conversationImportDone && (
+            <ConversationImport
+              sessionId={sessionId}
+              onComplete={() => setConversationImportDone(true)}
+              onSkip={() => setConversationImportDone(true)}
+            />
+          )}
+
+          {/* Interview start — shown after import is done or skipped */}
+          {conversationImportDone && (
+            <>
+              <p className="text-zinc-400 mb-4 mt-8">
+                Ready to go deeper? The interview takes about 10 minutes.
+              </p>
+              <button
+                onClick={startInterview}
+                className="w-full rounded-lg bg-zinc-100 px-6 py-3 text-zinc-900 font-medium hover:bg-zinc-200 transition-colors"
+              >
+                Start Interview
+              </button>
+            </>
+          )}
         </div>
       )}
 
