@@ -14,7 +14,6 @@ import {
   apiGenerationStream,
   type ProjectDetail,
   type SceneListItem,
-  type SceneDetail,
   type GenerationEvent,
 } from "@/lib/api";
 import type { PipelineStage } from "./components/StageIndicator";
