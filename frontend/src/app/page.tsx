@@ -98,6 +98,7 @@ export default function VoiceDiscoveryPage() {
   const [userInput, setUserInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_questionNumber, setQuestionNumber] = useState(0);
   const [interviewComplete, setInterviewComplete] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);

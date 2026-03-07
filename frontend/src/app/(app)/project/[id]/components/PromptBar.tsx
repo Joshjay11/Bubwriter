@@ -23,7 +23,6 @@ export function PromptBar({
   onRegenerate,
   onRefine,
   stage,
-  _hasActiveScene,
   hasVoiceProfile,
 }: PromptBarProps) {
   const [showRefine, setShowRefine] = useState(false);
