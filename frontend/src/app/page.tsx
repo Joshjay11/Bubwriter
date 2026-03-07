@@ -98,7 +98,7 @@ export default function VoiceDiscoveryPage() {
   const [userInput, setUserInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
-  const [questionNumber, setQuestionNumber] = useState(0);
+  const [_questionNumber, setQuestionNumber] = useState(0);
   const [interviewComplete, setInterviewComplete] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
