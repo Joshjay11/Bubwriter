@@ -1,8 +1,12 @@
-"""Voice service — DeepSeek V3 streaming prose generation (Stage 2).
+"""Voice service — DeepSeek V3/R1 streaming prose generation (Stage 2).
 
-Streams prose tokens from V3 via the OpenAI-compatible API.
-Uses the writer's voice_instruction and anti-slop constraints
-to generate prose that sounds like the user wrote it.
+Streams prose tokens from V3 (default) or R1 (deep_voice) via the
+OpenAI-compatible API. Uses the writer's voice_instruction and anti-slop
+constraints to generate prose that sounds like the user wrote it.
+
+v2: Added voice_mode parameter to switch between V3 (fast, high-temp)
+and R1 (slower, more deliberate). Both use DeepInfra with fallback
+to Fireworks.
 """
 
 import logging
@@ -11,14 +15,33 @@ from collections.abc import AsyncGenerator
 import openai
 
 from app.config import settings
-from app.models.generation_schemas import SceneSkeleton
+from app.models.generation_schemas import SceneSkeleton, VoiceMode
 from app.prompts.voice_prompt import VOICE_SYSTEM, VOICE_USER
 
 logger = logging.getLogger(__name__)
 
 DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai"
 FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
-VOICE_MODEL = "deepseek-ai/DeepSeek-V3-0324"
+
+# Model + parameter presets per voice mode
+VOICE_MODELS = {
+    VoiceMode.default: {
+        "model": "deepseek-ai/DeepSeek-V3-0324",
+        "temperature": 1.3,
+        "top_p": 0.95,
+        "frequency_penalty": 0.3,
+        "presence_penalty": 0.2,
+        "max_tokens": 4000,
+    },
+    VoiceMode.deep_voice: {
+        "model": "deepseek-ai/DeepSeek-R1",
+        "temperature": 0.9,
+        "top_p": 0.95,
+        "frequency_penalty": 0.4,
+        "presence_penalty": 0.3,
+        "max_tokens": 8000,
+    },
+}
 
 
 def _get_clients() -> list[openai.AsyncOpenAI]:
@@ -77,10 +100,12 @@ async def stream_voice(
     story_context: str,
     target_word_count: int = 2000,
     additional_instructions: str = "",
+    voice_mode: VoiceMode = VoiceMode.default,
 ) -> AsyncGenerator[str, None]:
-    """Stream prose tokens from DeepSeek V3.
+    """Stream prose tokens from DeepSeek V3 (default) or R1 (deep_voice).
 
     Yields individual text chunks as they arrive from the model.
+    Voice mode controls which model and parameters are used.
     """
     system_prompt = VOICE_SYSTEM.format(
         voice_instruction=voice_instruction,
@@ -96,26 +121,34 @@ async def stream_voice(
     if additional_instructions:
         user_prompt += f"\n\n## ADDITIONAL INSTRUCTIONS\n{additional_instructions}"
 
+    preset = VOICE_MODELS[voice_mode]
+    model_name = preset["model"]
+
     clients = _get_clients()
     last_error: Exception | None = None
+
+    logger.info("[GENERATION] Voice mode: %s, model: %s", voice_mode.value, model_name)
 
     for client in clients:
         try:
             stream = await client.chat.completions.create(
-                model=VOICE_MODEL,
+                model=model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=1.3,
-                top_p=0.95,
-                frequency_penalty=0.3,
-                presence_penalty=0.2,
-                max_tokens=4000,
+                temperature=preset["temperature"],
+                top_p=preset["top_p"],
+                frequency_penalty=preset["frequency_penalty"],
+                presence_penalty=preset["presence_penalty"],
+                max_tokens=preset["max_tokens"],
                 stream=True,
             )
             async for chunk in stream:
                 delta = chunk.choices[0].delta
+                # R1 (deep_voice) emits reasoning_content tokens — skip them
+                if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                    continue
                 if delta.content:
                     yield delta.content
             return

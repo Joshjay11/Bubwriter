@@ -112,6 +112,7 @@ async def generate_scene(
             project=project,
             include_polish=generate_request.include_polish,
             previous_output=previous_output,
+            voice_mode=generate_request.voice_mode,
         ),
         media_type="text/event-stream",
         headers={
@@ -165,6 +166,7 @@ async def continue_scene(
             project=project,
             include_polish=continue_request.include_polish,
             previous_output=previous_output,
+            voice_mode=continue_request.voice_mode,
         ),
         media_type="text/event-stream",
         headers={
@@ -192,6 +194,7 @@ async def refine_scene(
             voice_instruction=profile["voice_instruction"],
             anti_slop=profile.get("anti_slop"),
             include_polish=refine_request.include_polish,
+            voice_mode=refine_request.voice_mode,
         ),
         media_type="text/event-stream",
         headers={

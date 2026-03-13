@@ -5,6 +5,39 @@ import { useRouter } from "next/navigation";
 import { apiFetch, apiInterviewStream } from "@/lib/api";
 import ConversationImport from "./components/ConversationImport";
 
+// --- Web Speech API types (browser globals not in default TS lib) ---
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
+
+interface SpeechRecognitionInstance extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  }
+}
+
 // --- Types ---
 
 interface StyleMarkers {
@@ -130,7 +163,19 @@ export default function VoiceDiscoveryPage() {
   const [profile, setProfile] = useState<ProfileResult | null>(null);
   const [showVoiceInstruction, setShowVoiceInstruction] = useState(false);
 
+  // Voice input state
+  const [isRecording, setIsRecording] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+
   const wordCount = writingSample.split(/\s+/).filter(Boolean).length;
+
+  // Check Web Speech API support on mount
+  useEffect(() => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    setSpeechSupported(!!SpeechRecognition);
+  }, []);
 
   // Auto-scroll interview messages
   useEffect(() => {
@@ -234,6 +279,81 @@ export default function VoiceDiscoveryPage() {
       handleInterviewSubmit();
     }
   };
+
+  // --- Voice input (Web Speech API) ---
+
+  const toggleRecording = useCallback(() => {
+    // Stop recording
+    if (isRecording && recognitionRef.current) {
+      recognitionRef.current.stop();
+      return;
+    }
+
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognitionRef.current = recognition;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript;
+        } else {
+          interimTranscript += result[0].transcript;
+        }
+      }
+      if (finalTranscript) {
+        setUserInput((prev) => {
+          // Append final transcript to whatever was already in the box
+          const separator = prev.length > 0 && !prev.endsWith(" ") ? " " : "";
+          return prev + separator + finalTranscript;
+        });
+      } else if (interimTranscript) {
+        // Show interim in a non-destructive way: we append to the current
+        // stable text. The final result will replace interim automatically.
+        setUserInput((prev) => {
+          // Strip any prior interim text (marked by trailing interim block)
+          const base = prev.replace(/\u200B.*$/, "");
+          const separator =
+            base.length > 0 && !base.endsWith(" ") ? " " : "";
+          return base + separator + "\u200B" + interimTranscript;
+        });
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsRecording(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+      recognitionRef.current = null;
+      // Clean up any remaining zero-width space markers from interim text
+      setUserInput((prev) => prev.replace(/\u200B/g, ""));
+    };
+
+    recognition.start();
+    setIsRecording(true);
+  }, [isRecording]);
+
+  // Cleanup recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
 
   // --- Step 4: Finalize ---
 
@@ -459,16 +579,56 @@ export default function VoiceDiscoveryPage() {
             </button>
           ) : (
             <div>
-              <textarea
-                value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Type your answer..."
-                disabled={streaming}
-                className="w-full h-24 bg-zinc-900 rounded-lg p-4 text-zinc-100 placeholder:text-zinc-600 resize-none focus:outline-none focus:ring-1 focus:ring-zinc-700 disabled:opacity-50"
-              />
+              <div className="relative">
+                <textarea
+                  value={userInput}
+                  onChange={(e) => setUserInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    isRecording
+                      ? "Listening... speak your answer"
+                      : "Type your answer..."
+                  }
+                  disabled={streaming}
+                  className="w-full h-24 bg-zinc-900 rounded-lg p-4 pr-12 text-zinc-100 placeholder:text-zinc-600 resize-none focus:outline-none focus:ring-1 focus:ring-zinc-700 disabled:opacity-50"
+                />
+                {/* Mic button — positioned inside the textarea area */}
+                {speechSupported && !streaming && (
+                  <button
+                    type="button"
+                    onClick={toggleRecording}
+                    title={isRecording ? "Stop recording" : "Speak your answer"}
+                    className={`absolute right-3 top-3 w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
+                      isRecording
+                        ? "bg-red-500/20 text-red-400 animate-pulse"
+                        : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
+                    }`}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="w-4 h-4"
+                    >
+                      <rect x="9" y="2" width="6" height="11" rx="3" />
+                      <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+                      <line x1="12" y1="19" x2="12" y2="22" />
+                    </svg>
+                  </button>
+                )}
+              </div>
               <div className="flex justify-between items-center mt-2">
-                <span className="text-xs text-zinc-600">Ctrl+Enter to send</span>
+                <span className="text-xs text-zinc-600">
+                  {isRecording ? (
+                    <span className="text-red-400">Recording...</span>
+                  ) : (
+                    "Ctrl+Enter to send"
+                  )}
+                </span>
                 <button
                   onClick={handleInterviewSubmit}
                   disabled={!userInput.trim() || streaming}

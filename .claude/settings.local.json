@@ -5,7 +5,8 @@
       "Bash(npm install:*)",
       "Bash(npm run:*)",
       "Bash(xargs grep:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(npx tsc --noEmit --project frontend/tsconfig.json)"
     ]
   }
 }

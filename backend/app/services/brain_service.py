@@ -1,42 +1,24 @@
-"""Brain service — DeepSeek R1 scene skeleton generation (Stage 1).
+"""Brain service — Claude Sonnet scene skeleton generation (Stage 1, v2).
 
-Uses DeepInfra (primary) / Fireworks (fallback) for the R1 model.
-R1 performs better without system prompts — all instructions in user prompt.
-The `reasoning_content` field is stored for debug but NEVER fed back.
+Uses the Anthropic API directly (same pattern as polish_service.py).
+v2 change: Migrated from DeepSeek R1 via DeepInfra to Claude Sonnet via
+Anthropic. Claude handles system prompts properly, producing more
+reliable structured JSON output for scene skeletons.
 """
 
 import json
 import logging
 import re
 
-import openai
+import httpx
 
 from app.config import settings
 from app.prompts.brain_prompt import BRAIN_SYSTEM, BRAIN_USER
 
 logger = logging.getLogger(__name__)
 
-DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai"
-FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
-BRAIN_MODEL = "deepseek-ai/DeepSeek-R1"
-
-
-def _get_clients() -> list[openai.AsyncOpenAI]:
-    """Return ordered list of LLM clients for R1."""
-    clients = [
-        openai.AsyncOpenAI(
-            api_key=settings.deepinfra_api_key,
-            base_url=DEEPINFRA_BASE_URL,
-        ),
-    ]
-    if settings.fireworks_api_key:
-        clients.append(
-            openai.AsyncOpenAI(
-                api_key=settings.fireworks_api_key,
-                base_url=FIREWORKS_BASE_URL,
-            ),
-        )
-    return clients
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+BRAIN_MODEL = "claude-sonnet-4-5-20250929"
 
 
 def _clean_json_response(raw: str) -> str:
@@ -54,10 +36,10 @@ async def run_brain(
     continuation_context: str = "",
     retry: bool = False,
 ) -> str:
-    """Run DeepSeek R1 to generate a scene skeleton as JSON.
+    """Run Claude Sonnet to generate a scene skeleton as JSON.
 
     Returns the raw JSON string (validated by caller).
-    On retry, adds tighter constraints to the prompt.
+    On retry, adds tighter constraints to the user prompt.
     """
     user_prompt = BRAIN_USER.format(
         user_prompt=prompt,
@@ -73,29 +55,39 @@ async def run_brain(
             "beats (array with at least 4 items), closing_image."
         )
 
-    clients = _get_clients()
-    last_error: Exception | None = None
-
-    messages: list[dict[str, str]] = []
-    if BRAIN_SYSTEM:
-        messages.append({"role": "system", "content": BRAIN_SYSTEM})
-    messages.append({"role": "user", "content": user_prompt})
-
-    for client in clients:
-        try:
-            response = await client.chat.completions.create(
-                model=BRAIN_MODEL,
-                messages=messages,  # type: ignore[arg-type]
-                temperature=0.6,
-                top_p=0.95,
-                max_tokens=4000,
-                frequency_penalty=0.4,
-                presence_penalty=0.2,
-                response_format={"type": "json_object"},
+    try:
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.post(
+                ANTHROPIC_API_URL,
+                headers={
+                    "x-api-key": settings.anthropic_api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": BRAIN_MODEL,
+                    "max_tokens": 4000,
+                    "temperature": 0.4,
+                    "system": BRAIN_SYSTEM,
+                    "messages": [
+                        {"role": "user", "content": user_prompt},
+                    ],
+                },
             )
-            content = response.choices[0].message.content
-            if content is None:
-                raise ValueError("R1 returned empty content")
+
+            if response.status_code != 200:
+                error_detail = response.text
+                logger.error(
+                    "[GENERATION] Brain API error %d: %s",
+                    response.status_code,
+                    error_detail,
+                )
+                raise RuntimeError(
+                    f"Brain API returned {response.status_code}: {error_detail}"
+                )
+
+            data = response.json()
+            content = data["content"][0]["text"]
 
             cleaned = _clean_json_response(content)
 
@@ -105,11 +97,6 @@ async def run_brain(
             logger.info("[GENERATION] Brain skeleton generated (%d chars)", len(cleaned))
             return cleaned
 
-        except Exception as e:
-            logger.warning(
-                "[GENERATION] Brain failed with %s: %s", type(e).__name__, e
-            )
-            last_error = e
-            continue
-
-    raise last_error or RuntimeError("No LLM providers available for Brain")
+    except httpx.HTTPError as e:
+        logger.error("[GENERATION] Brain HTTP error: %s", e)
+        raise RuntimeError(f"Brain API request failed: {e}") from e

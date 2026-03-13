@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator
 
 from pydantic import ValidationError
 
-from app.models.generation_schemas import SceneSkeleton
+from app.models.generation_schemas import SceneSkeleton, VoiceMode
 from app.services.anti_slop import build_anti_slop_block
 from app.services.brain_service import run_brain
 from app.services.polish_service import run_polish
@@ -98,6 +98,7 @@ async def store_generation_after_brain(
     project_id: str | None,
     user_prompt: str,
     brain_output: str,
+    voice_mode: VoiceMode = VoiceMode.default,
 ) -> str:
     """Phase 1: Insert generation row after Brain completes.
 
@@ -111,6 +112,7 @@ async def store_generation_after_brain(
         "brain_output": brain_output,
         "voice_output": "",
         "word_count": 0,
+        "voice_mode": voice_mode.value,
     }
     if project_id:
         insert_data["project_id"] = project_id
@@ -152,6 +154,7 @@ async def run_generation_pipeline(
     project: dict | None,
     include_polish: bool,
     previous_output: str | None,
+    voice_mode: VoiceMode = VoiceMode.default,
 ) -> AsyncGenerator[str, None]:
     """The Brain -> Voice -> Polish pipeline.
 
@@ -203,6 +206,7 @@ async def run_generation_pipeline(
             project_id=project.get("id") if project else None,
             user_prompt=prompt,
             brain_output=skeleton_json,
+            voice_mode=voice_mode,
         )
     except Exception as e:
         logger.error("[GENERATION] Failed to store brain output: %s", e)
@@ -210,7 +214,12 @@ async def run_generation_pipeline(
         return
 
     # ─── STAGE 2: THE VOICE ─────────────────────────────────
-    yield sse_event("stage", stage="voice", message="Writing in your voice...")
+    voice_stage_msg = (
+        "Deep writing in your voice..."
+        if voice_mode == VoiceMode.deep_voice
+        else "Writing in your voice..."
+    )
+    yield sse_event("stage", stage="voice", message=voice_stage_msg)
 
     anti_slop_rules = build_anti_slop_block(anti_slop)
     readable_skeleton = format_skeleton_for_voice(validated or skeleton_json)
@@ -224,6 +233,7 @@ async def run_generation_pipeline(
             anti_slop_rules=anti_slop_rules,
             story_context=story_context,
             target_word_count=target_word_count,
+            voice_mode=voice_mode,
         ):
             full_output += token
             yield sse_event("token", content=token)
@@ -280,6 +290,7 @@ async def run_generation_pipeline(
     yield sse_event("done", metadata={
         "word_count": word_count,
         "generation_id": generation_id,
+        "voice_mode": voice_mode.value,
     })
 
 
@@ -292,6 +303,7 @@ async def run_refine_pipeline(
     voice_instruction: str,
     anti_slop: dict | None,
     include_polish: bool,
+    voice_mode: VoiceMode = VoiceMode.default,
 ) -> AsyncGenerator[str, None]:
     """Re-run Voice with user feedback, reusing the Brain skeleton.
 
@@ -328,6 +340,7 @@ async def run_refine_pipeline(
             project_id=project_id,
             user_prompt=user_prompt,
             brain_output=skeleton_json,
+            voice_mode=voice_mode,
         )
     except Exception as e:
         logger.error("[GENERATION] Failed to store refine generation: %s", e)
@@ -335,7 +348,12 @@ async def run_refine_pipeline(
         return
 
     # Voice stage with feedback
-    yield sse_event("stage", stage="voice", message="Rewriting with your feedback...")
+    refine_msg = (
+        "Deep rewriting with your feedback..."
+        if voice_mode == VoiceMode.deep_voice
+        else "Rewriting with your feedback..."
+    )
+    yield sse_event("stage", stage="voice", message=refine_msg)
 
     anti_slop_rules = build_anti_slop_block(anti_slop)
     target_word_count = validated.target_word_count if validated else 2000
@@ -349,6 +367,7 @@ async def run_refine_pipeline(
             story_context="",
             target_word_count=target_word_count,
             additional_instructions=f"USER FEEDBACK on previous draft: {feedback}",
+            voice_mode=voice_mode,
         ):
             full_output += token
             yield sse_event("token", content=token)
@@ -388,4 +407,5 @@ async def run_refine_pipeline(
     yield sse_event("done", metadata={
         "word_count": word_count,
         "generation_id": new_gen_id,
+        "voice_mode": voice_mode.value,
     })

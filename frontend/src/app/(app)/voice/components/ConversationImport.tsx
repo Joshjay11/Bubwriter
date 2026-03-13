@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   apiConversationImport,
   type ConversationImportStats,
@@ -13,6 +13,96 @@ interface ConversationImportProps {
 }
 
 type ImportPhase = "upload" | "processing" | "complete" | "error";
+
+const ACCEPTED_EXTENSIONS = ".zip,.md,.txt,.json,.pdf";
+
+// --- Export Instructions Modal ---
+
+function ExportInstructionsModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/70"
+        onClick={onClose}
+      />
+      {/* Modal */}
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-xl max-w-lg w-full mx-4 p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-semibold text-zinc-100">
+            How to export your conversations
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors text-xl leading-none"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div className="space-y-5">
+          {/* ChatGPT */}
+          <div>
+            <h4 className="text-sm font-medium text-zinc-200 mb-2">
+              ChatGPT
+            </h4>
+            <ol className="text-zinc-400 text-sm space-y-1 list-decimal list-inside">
+              <li>Open ChatGPT &rarr; Settings &rarr; Data Controls</li>
+              <li>Click &quot;Export Data&quot;</li>
+              <li>Wait for the email with your download link</li>
+              <li>Upload the .zip file here</li>
+            </ol>
+          </div>
+
+          {/* Google Docs */}
+          <div>
+            <h4 className="text-sm font-medium text-zinc-200 mb-2">
+              Google Docs
+              <span className="ml-2 text-xs text-emerald-400 font-normal">
+                Recommended
+              </span>
+            </h4>
+            <ol className="text-zinc-400 text-sm space-y-1 list-decimal list-inside">
+              <li>Open your conversation document in Google Docs</li>
+              <li>File &rarr; Download &rarr; Markdown (.md)</li>
+              <li>Upload the .md file here</li>
+            </ol>
+          </div>
+
+          {/* Claude */}
+          <div>
+            <h4 className="text-sm font-medium text-zinc-200 mb-2">
+              Claude
+            </h4>
+            <p className="text-zinc-500 text-sm">
+              Claude doesn&apos;t support conversation export yet (coming
+              soon). You can copy-paste conversations into a .txt file as a
+              workaround.
+            </p>
+          </div>
+
+          {/* Generic */}
+          <div>
+            <h4 className="text-sm font-medium text-zinc-200 mb-2">
+              Other sources
+            </h4>
+            <p className="text-zinc-500 text-sm">
+              Any .md, .txt, .json, or .pdf file with your conversations will
+              work. Copy-paste your chats into a text file if needed.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="mt-6 w-full rounded-lg bg-zinc-800 px-4 py-2.5 text-sm text-zinc-200 font-medium hover:bg-zinc-700 transition-colors"
+        >
+          Got it
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function ConversationImport({
   sessionId,
@@ -97,8 +187,8 @@ export default function ConversationImport({
           Want a deeper voice profile?
         </h2>
         <p className="text-zinc-400 text-sm mb-4 leading-relaxed">
-          Upload your ChatGPT conversation export and we&apos;ll analyze your
-          natural communication patterns for an even more accurate voice match.
+          Upload your conversation export and we&apos;ll analyze your natural
+          communication patterns for an even more accurate voice match.
         </p>
         <p className="text-zinc-500 text-xs mb-6">
           Your conversations are analyzed and immediately discarded — we never
@@ -111,7 +201,7 @@ export default function ConversationImport({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".zip"
+            accept={ACCEPTED_EXTENSIONS}
             onChange={handleFileSelect}
             className="hidden"
             id="conversation-upload"
@@ -129,7 +219,7 @@ export default function ConversationImport({
               </span>
             ) : (
               <span className="text-zinc-500 text-sm">
-                Choose ChatGPT export (.zip)
+                Upload your conversation export (.zip, .md, .pdf, .txt, or .json)
               </span>
             )}
           </label>
@@ -149,28 +239,20 @@ export default function ConversationImport({
           </button>
         )}
 
-        {/* Export help */}
+        {/* Export help link → opens modal */}
         <div className="mb-4">
           <button
-            onClick={() => setShowExportHelp(!showExportHelp)}
-            className="text-zinc-500 text-xs hover:text-zinc-300 transition-colors"
+            onClick={() => setShowExportHelp(true)}
+            className="text-zinc-500 text-xs hover:text-zinc-300 transition-colors inline-flex items-center gap-1"
           >
-            {showExportHelp ? "Hide" : "How to export from ChatGPT"}
+            How to export your conversations
+            <span className="text-[10px]">&nearr;</span>
           </button>
-          {showExportHelp && (
-            <div className="mt-2 bg-zinc-800 rounded-lg p-3">
-              <ol className="text-zinc-400 text-xs space-y-1 list-decimal list-inside">
-                <li>Open ChatGPT and go to Settings</li>
-                <li>Click Data Controls</li>
-                <li>Click Export Data</li>
-                <li>
-                  You&apos;ll receive an email with a download link for your
-                  export ZIP
-                </li>
-              </ol>
-            </div>
-          )}
         </div>
+
+        {showExportHelp && (
+          <ExportInstructionsModal onClose={() => setShowExportHelp(false)} />
+        )}
 
         {/* Skip */}
         <button

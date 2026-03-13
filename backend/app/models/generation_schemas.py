@@ -5,7 +5,21 @@ All LLM-facing models use Optional fields with defaults — LLMs don't reliably
 produce every field every time.
 """
 
+from enum import Enum
+
 from pydantic import BaseModel
+
+
+# --- Voice Mode ---
+
+class VoiceMode(str, Enum):
+    """Controls which model powers the Voice (prose generation) stage.
+
+    default: DeepSeek V3 — fast, high-temperature creative writing.
+    deep_voice: DeepSeek R1 — slower, more deliberate and nuanced prose.
+    """
+    default = "default"
+    deep_voice = "deep_voice"
 
 
 # --- Scene Skeleton (Brain output) ---
@@ -43,6 +57,7 @@ class GenerateRequest(BaseModel):
     context: str | None = None
     include_polish: bool = False
     previous_scene_id: str | None = None
+    voice_mode: VoiceMode = VoiceMode.default
 
 
 class ContinueRequest(BaseModel):
@@ -52,6 +67,7 @@ class ContinueRequest(BaseModel):
     generation_id: str
     prompt: str | None = None
     include_polish: bool = False
+    voice_mode: VoiceMode = VoiceMode.default
 
 
 class RefineRequest(BaseModel):
@@ -60,3 +76,4 @@ class RefineRequest(BaseModel):
     feedback: str
     voice_profile_id: str
     include_polish: bool = False
+    voice_mode: VoiceMode = VoiceMode.default
