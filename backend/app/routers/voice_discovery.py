@@ -31,6 +31,8 @@ from app.models.voice_session import (
 from app.prompts.interview_conductor import INTERVIEW_START, INTERVIEW_SYSTEM
 from app.prompts.profile_compiler import (
     CONVERSATION_ENRICHMENT_BLOCK,
+    INSTRUCTION_WRITER_SYSTEM,
+    INSTRUCTION_WRITER_USER,
     PROFILE_COMPILER_SYSTEM,
     PROFILE_COMPILER_USER,
 )
@@ -306,6 +308,34 @@ async def finalize_profile(
         max_tokens=8000,
         error_message="Profile compilation failed — please try again.",
     )
+
+    # Stage 2: Generate plain-text voice instruction from structured profile JSON
+    instruction_user_prompt = INSTRUCTION_WRITER_USER.format(
+        profile_json=json.dumps(profile_dict, indent=2),
+        writing_sample_truncated=writing_sample_truncated,
+    )
+    try:
+        voice_instruction = (await llm_service.generate(
+            system_prompt=INSTRUCTION_WRITER_SYSTEM,
+            user_prompt=instruction_user_prompt,
+            temperature=0.7,
+            max_tokens=4000,
+        )).strip()
+    except Exception as e:
+        logger.error("Voice instruction generation failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Profile compilation failed — please try again.",
+        )
+
+    if not voice_instruction:
+        logger.error("Voice instruction generation returned empty output")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Profile compilation failed — please try again.",
+        )
+
+    profile_dict["voice_instruction"] = voice_instruction
 
     # Store in Supabase
     try:

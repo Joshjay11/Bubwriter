@@ -50,9 +50,12 @@ interface StyleMarkers {
   dialogue_style: string;
   pov_tendency: string;
   tense_preference: string;
-  dark_humor_quotient: string;
+  humor_and_wit: string;
+  figurative_language: string;
+  structural_patterns: string;
   notable_patterns: string[];
   comparable_authors: string[];
+  confidence_note: string;
 }
 
 interface AnalyzeResponse {
@@ -477,7 +480,15 @@ export default function VoiceDiscoveryPage() {
             <StyleCard label="Dialogue" value={styleMarkers.dialogue_style} />
             <StyleCard label="Point of View" value={styleMarkers.pov_tendency} />
             <StyleCard label="Tense" value={styleMarkers.tense_preference} />
-            <StyleCard label="Humor" value={styleMarkers.dark_humor_quotient} />
+            <StyleCard label="Humor & Wit" value={styleMarkers.humor_and_wit} />
+            <StyleCard
+              label="Figurative Language"
+              value={styleMarkers.figurative_language}
+            />
+            <StyleCard
+              label="Structural Patterns"
+              value={styleMarkers.structural_patterns}
+            />
 
             {styleMarkers.notable_patterns.length > 0 && (
               <div className="bg-zinc-900 rounded-lg p-4">
@@ -506,6 +517,17 @@ export default function VoiceDiscoveryPage() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {styleMarkers.confidence_note && (
+              <div className="bg-zinc-900 rounded-lg p-4">
+                <span className="text-sm text-zinc-500 block mb-2">
+                  Confidence Note
+                </span>
+                <p className="text-zinc-200 text-sm">
+                  {styleMarkers.confidence_note}
+                </p>
               </div>
             )}
           </div>
