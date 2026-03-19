@@ -36,7 +36,7 @@ async def _load_voice_profile(
     supabase = get_supabase_client()
     result = (
         supabase.table("voice_profiles")
-        .select("id, voice_instruction, anti_slop")
+        .select("id, voice_instruction, anti_slop, voice_model")
         .eq("id", voice_profile_id)
         .eq("user_id", user_id)
         .execute()
@@ -103,6 +103,8 @@ async def generate_scene(
         if prev_result.data and prev_result.data[0].get("voice_output"):
             previous_output = prev_result.data[0]["voice_output"]
 
+    voice_model = profile.get("voice_model", "deepseek-v3")
+
     return StreamingResponse(
         run_generation_pipeline(
             user_id=user_id,
@@ -113,6 +115,7 @@ async def generate_scene(
             include_polish=generate_request.include_polish,
             previous_output=previous_output,
             voice_mode=generate_request.voice_mode,
+            voice_model=voice_model,
         ),
         media_type="text/event-stream",
         headers={
@@ -156,6 +159,7 @@ async def continue_scene(
         project = await _load_project(project_id, user_id)
 
     prompt = continue_request.prompt or "Continue the scene from where it left off."
+    voice_model = profile.get("voice_model", "deepseek-v3")
 
     return StreamingResponse(
         run_generation_pipeline(
@@ -167,6 +171,7 @@ async def continue_scene(
             include_polish=continue_request.include_polish,
             previous_output=previous_output,
             voice_mode=continue_request.voice_mode,
+            voice_model=voice_model,
         ),
         media_type="text/event-stream",
         headers={
@@ -186,6 +191,8 @@ async def refine_scene(
     # Load voice profile
     profile = await _load_voice_profile(refine_request.voice_profile_id, user_id)
 
+    voice_model = profile.get("voice_model", "deepseek-v3")
+
     return StreamingResponse(
         run_refine_pipeline(
             user_id=user_id,
@@ -195,6 +202,7 @@ async def refine_scene(
             anti_slop=profile.get("anti_slop"),
             include_polish=refine_request.include_polish,
             voice_mode=refine_request.voice_mode,
+            voice_model=voice_model,
         ),
         media_type="text/event-stream",
         headers={

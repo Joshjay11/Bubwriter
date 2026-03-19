@@ -8,7 +8,12 @@
       "Bash(ls:*)",
       "Bash(npx tsc --noEmit --project frontend/tsconfig.json)",
       "Bash(find:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/services/voice_service.py''\\).read\\(\\)\\); print\\(''voice_service.py: syntax OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/models/schemas.py''\\).read\\(\\)\\); print\\(''schemas.py: syntax OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/services/generation_pipeline.py''\\).read\\(\\)\\); print\\(''generation_pipeline.py: syntax OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/routers/generation.py''\\).read\\(\\)\\); print\\(''generation.py: syntax OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/config.py''\\).read\\(\\)\\); print\\(''config.py: syntax OK''\\)\")"
     ]
   }
 }

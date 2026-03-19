@@ -5,9 +5,19 @@ and serialization. Expand as features are implemented.
 """
 
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator
+
+
+# --- Voice Model Selection ---
+
+class VoiceModelChoice(str, Enum):
+    """Which model powers the Voice (prose generation) stage for this profile."""
+    DEEPSEEK_V3 = "deepseek-v3"
+    MISTRAL_CREATIVE = "mistral-small-creative"
+    LLAMA_70B = "llama-70b"
 
 
 # --- Health ---
@@ -138,6 +148,7 @@ class VoiceProfileBase(BaseModel):
     influences: dict = {}
     anti_slop: dict = {}
     voice_instruction: str | None = None
+    voice_model: VoiceModelChoice = VoiceModelChoice.DEEPSEEK_V3
 
 
 class VoiceProfileCreate(VoiceProfileBase):

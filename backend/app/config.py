@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # LLM providers
     deepinfra_api_key: str
     fireworks_api_key: str = ""
+    openrouter_api_key: str = ""
     anthropic_api_key: str
 
     # Stripe

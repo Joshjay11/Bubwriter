@@ -155,10 +155,12 @@ async def run_generation_pipeline(
     include_polish: bool,
     previous_output: str | None,
     voice_mode: VoiceMode = VoiceMode.default,
+    voice_model: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """The Brain -> Voice -> Polish pipeline.
 
     Yields SSE events as the pipeline progresses.
+    If voice_model is set (from profile), it overrides voice_mode for routing.
     """
 
     # ─── STAGE 1: THE BRAIN ─────────────────────────────────
@@ -234,6 +236,7 @@ async def run_generation_pipeline(
             story_context=story_context,
             target_word_count=target_word_count,
             voice_mode=voice_mode,
+            voice_model=voice_model,
         ):
             full_output += token
             yield sse_event("token", content=token)
@@ -291,6 +294,7 @@ async def run_generation_pipeline(
         "word_count": word_count,
         "generation_id": generation_id,
         "voice_mode": voice_mode.value,
+        "voice_model": voice_model or "deepseek-v3",
     })
 
 
@@ -304,6 +308,7 @@ async def run_refine_pipeline(
     anti_slop: dict | None,
     include_polish: bool,
     voice_mode: VoiceMode = VoiceMode.default,
+    voice_model: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Re-run Voice with user feedback, reusing the Brain skeleton.
 
@@ -368,6 +373,7 @@ async def run_refine_pipeline(
             target_word_count=target_word_count,
             additional_instructions=f"USER FEEDBACK on previous draft: {feedback}",
             voice_mode=voice_mode,
+            voice_model=voice_model,
         ):
             full_output += token
             yield sse_event("token", content=token)
@@ -408,4 +414,5 @@ async def run_refine_pipeline(
         "word_count": word_count,
         "generation_id": new_gen_id,
         "voice_mode": voice_mode.value,
+        "voice_model": voice_model or "deepseek-v3",
     })
