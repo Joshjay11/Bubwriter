@@ -133,6 +133,7 @@ def _build_project_detail(
         id=project["id"],
         title=project["title"],
         genre=project.get("genre"),
+        distribution_format=project.get("distribution_format"),
         voice_profile_id=project.get("voice_profile_id"),
         voice_profile_name=voice_profile_name,
         story_bible=project.get("story_bible") or {},
@@ -175,6 +176,7 @@ async def create_project(
         "user_id": user_id,
         "title": create_request.title,
         "genre": create_request.genre,
+        "distribution_format": create_request.distribution_format,
         "voice_profile_id": create_request.voice_profile_id,
         "story_bible": {},
     }
@@ -240,6 +242,7 @@ async def list_projects(
                 id=pid,
                 title=p["title"],
                 genre=p.get("genre"),
+                distribution_format=p.get("distribution_format"),
                 voice_profile_id=p.get("voice_profile_id"),
                 voice_profile_name=vp_names.get(p.get("voice_profile_id", ""), None),
                 scene_count=s.get("scene_count", 0),
@@ -283,6 +286,8 @@ async def update_project(
         update_data["title"] = update_request.title
     if update_request.genre is not None:
         update_data["genre"] = update_request.genre
+    if update_request.distribution_format is not None:
+        update_data["distribution_format"] = update_request.distribution_format
     if update_request.story_bible is not None:
         update_data["story_bible"] = update_request.story_bible
     if update_request.voice_profile_id is not None:

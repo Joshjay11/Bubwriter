@@ -54,5 +54,8 @@ BRAIN_USER = """## THE SCENE REQUEST
 ## STORY CONTEXT
 {story_context}
 
+## GENRE & FORMAT GUARDRAILS
+{genre_guardrails}
+
 ## CONTINUATION CONTEXT
 {continuation_context}"""

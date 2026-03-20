@@ -62,7 +62,7 @@ async def _load_project(
     supabase = get_supabase_client()
     result = (
         supabase.table("projects")
-        .select("id, title, genre, story_bible")
+        .select("id, title, genre, distribution_format, story_bible")
         .eq("id", project_id)
         .eq("user_id", user_id)
         .execute()

@@ -17,6 +17,7 @@ class CreateProjectRequest(BaseModel):
 
     title: str
     genre: str | None = None
+    distribution_format: str | None = "kindle_ebook"
     voice_profile_id: str | None = None
 
     @field_validator("title")
@@ -35,6 +36,7 @@ class UpdateProjectRequest(BaseModel):
 
     title: str | None = None
     genre: str | None = None
+    distribution_format: str | None = None
     voice_profile_id: str | None = None
     story_bible: dict | None = None
 
@@ -56,6 +58,7 @@ class ProjectListItem(BaseModel):
     id: str
     title: str
     genre: str | None = None
+    distribution_format: str | None = None
     voice_profile_id: str | None = None
     voice_profile_name: str | None = None
     scene_count: int = 0
@@ -77,6 +80,7 @@ class ProjectDetailResponse(BaseModel):
     id: str
     title: str
     genre: str | None = None
+    distribution_format: str | None = None
     voice_profile_id: str | None = None
     voice_profile_name: str | None = None
     story_bible: dict = {}

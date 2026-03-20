@@ -34,6 +34,7 @@ async def run_brain(
     prompt: str,
     story_context: str = "",
     continuation_context: str = "",
+    genre_guardrails: str = "",
     retry: bool = False,
 ) -> str:
     """Run Claude Sonnet to generate a scene skeleton as JSON.
@@ -44,6 +45,7 @@ async def run_brain(
     user_prompt = BRAIN_USER.format(
         user_prompt=prompt,
         story_context=story_context or "No story context available.",
+        genre_guardrails=genre_guardrails or "No genre or format constraints.",
         continuation_context=continuation_context or "This is a standalone scene.",
     )
 

@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 
 from pydantic import ValidationError
 
+from app.config.genre_guardrails import build_genre_guardrails
 from app.models.generation_schemas import SceneSkeleton, VoiceMode
 from app.services.anti_slop import build_anti_slop_block
 from app.services.brain_service import run_brain
@@ -170,12 +171,19 @@ async def run_generation_pipeline(
     continuation_context = (
         build_continuation_context(previous_output) if previous_output else ""
     )
+    genre_guardrails = ""
+    if project:
+        genre_guardrails = build_genre_guardrails(
+            genre=project.get("genre"),
+            distribution_format=project.get("distribution_format"),
+        )
 
     try:
         skeleton_json = await run_brain(
             prompt=prompt,
             story_context=story_context,
             continuation_context=continuation_context,
+            genre_guardrails=genre_guardrails,
         )
     except Exception as e:
         logger.error("[GENERATION] Brain stage failed: %s", e)
@@ -192,6 +200,7 @@ async def run_generation_pipeline(
                 prompt=prompt,
                 story_context=story_context,
                 continuation_context=continuation_context,
+                genre_guardrails=genre_guardrails,
                 retry=True,
             )
             validated = validate_skeleton(skeleton_json)
