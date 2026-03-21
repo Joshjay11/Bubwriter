@@ -179,15 +179,67 @@ export async function apiConversationImport(
 // --- Generation Stream ---
 
 export interface GenerationEvent {
-  type: "stage" | "skeleton" | "token" | "polish_complete" | "done" | "error";
+  type:
+    | "stage"
+    | "skeleton"
+    | "token"
+    | "polish_complete"
+    | "bible_suggestions"
+    | "done"
+    | "error";
   stage?: string;
   message?: string;
   content?: string;
   data?: string;
+  suggestions?: ExtractionSuggestions;
   metadata?: {
     word_count: number;
     generation_id: string;
   };
+}
+
+// --- Extraction Loop Types ---
+
+export interface CharacterSuggestion {
+  name: string;
+  description: string;
+  role: string;
+  first_appearance: string;
+}
+
+export interface LocationSuggestion {
+  name: string;
+  description: string;
+  sensory_details: Record<string, string>;
+  first_appearance: string;
+}
+
+export interface CharacterUpdate {
+  character_name: string;
+  character_id: string | null;
+  update_type: string;
+  detail: string;
+}
+
+export interface WorldRuleSuggestion {
+  category: string;
+  rule: string;
+  exceptions: string[];
+  implications: string;
+}
+
+export interface PlotBeatSuggestion {
+  beat: string;
+  characters_involved: string[];
+  consequences: string[];
+}
+
+export interface ExtractionSuggestions {
+  new_characters: CharacterSuggestion[];
+  new_locations: LocationSuggestion[];
+  character_updates: CharacterUpdate[];
+  new_world_rules: WorldRuleSuggestion[];
+  plot_beats: PlotBeatSuggestion[];
 }
 
 export async function apiGenerationStream(
@@ -307,6 +359,7 @@ export interface ProjectListItem {
   id: string;
   title: string;
   genre: string | null;
+  distribution_format: string | null;
   voice_profile_id: string | null;
   voice_profile_name: string | null;
   scene_count: number;
@@ -320,6 +373,7 @@ export interface ProjectDetail {
   id: string;
   title: string;
   genre: string | null;
+  distribution_format: string | null;
   voice_profile_id: string | null;
   voice_profile_name: string | null;
   story_bible: Record<string, unknown>;
@@ -445,5 +499,21 @@ export async function reorderScenes(
   await apiFetch<{ reordered: boolean }>(
     `/api/projects/${projectId}/scenes/reorder`,
     { method: "POST", body: JSON.stringify({ scene_ids: sceneIds }) }
+  );
+}
+
+// --- Story Bible Entry ---
+
+export async function addBibleEntry(
+  projectId: string,
+  section: string,
+  entry: Record<string, unknown>
+): Promise<void> {
+  await apiFetch<{ added: boolean }>(
+    `/api/projects/${projectId}/bible/entry`,
+    {
+      method: "POST",
+      body: JSON.stringify({ section, entry }),
+    }
   );
 }

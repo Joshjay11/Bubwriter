@@ -14,6 +14,7 @@ from app.config.genre_guardrails import build_genre_guardrails
 from app.models.generation_schemas import SceneSkeleton, VoiceMode
 from app.services.anti_slop import build_anti_slop_block
 from app.services.brain_service import run_brain
+from app.services.extraction_service import extract_story_facts
 from app.services.polish_service import run_polish
 from app.services.supabase_client import get_supabase_client
 from app.services.voice_service import format_skeleton_for_voice, stream_voice
@@ -298,6 +299,37 @@ async def run_generation_pipeline(
     except Exception as e:
         logger.error("[GENERATION] Failed to update generation: %s", e)
         # Non-fatal — the user still saw the output
+
+    # ─── POST-GENERATION: EXTRACTION LOOP ───────────────────
+    if project:
+        existing_bible = project.get("story_bible") or {}
+        try:
+            yield sse_event(
+                "stage", stage="extraction", message="Analyzing your scene..."
+            )
+            final_prose = polished_output or full_output
+            suggestions = await extract_story_facts(
+                prose=final_prose,
+                existing_bible=existing_bible,
+                genre=project.get("genre"),
+            )
+
+            has_suggestions = (
+                suggestions.new_characters
+                or suggestions.new_locations
+                or suggestions.character_updates
+                or suggestions.new_world_rules
+                or suggestions.plot_beats
+            )
+
+            if has_suggestions:
+                yield sse_event(
+                    "bible_suggestions",
+                    suggestions=suggestions.model_dump(),
+                )
+        except Exception as e:
+            # Extraction failure should never block the generation
+            logger.error("[EXTRACTION] Extraction loop failed: %s", e)
 
     yield sse_event("done", metadata={
         "word_count": word_count,

@@ -15,12 +15,14 @@ import {
   type ProjectDetail,
   type SceneListItem,
   type GenerationEvent,
+  type ExtractionSuggestions,
 } from "@/lib/api";
 import type { PipelineStage } from "./components/StageIndicator";
 import { ProjectHeader } from "./components/ProjectHeader";
 import { SceneSidebar } from "./components/SceneSidebar";
 import { Editor } from "./components/Editor";
 import { PromptBar } from "./components/PromptBar";
+import { SuggestionPanel } from "./components/SuggestionPanel";
 
 interface VoiceProfile {
   id: string;
@@ -50,6 +52,9 @@ export default function ProjectPage() {
   const [brainMessageIdx, setBrainMessageIdx] = useState(0);
   const [generationError, setGenerationError] = useState("");
   const brainTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // --- Extraction suggestions state ---
+  const [suggestions, setSuggestions] = useState<ExtractionSuggestions | null>(null);
 
   // --- Save state ---
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -260,6 +265,7 @@ export default function ProjectPage() {
       setStage("brain");
       setEditorContent("");
       lastSavedContentRef.current = "";
+      setSuggestions(null);
 
       try {
         await apiGenerationStream(path, body, (event: GenerationEvent) => {
@@ -282,6 +288,11 @@ export default function ProjectPage() {
             case "polish_complete":
               if (event.content) {
                 setEditorContent(event.content);
+              }
+              break;
+            case "bible_suggestions":
+              if (event.suggestions) {
+                setSuggestions(event.suggestions);
               }
               break;
             case "done":
@@ -406,6 +417,14 @@ export default function ProjectPage() {
             hasActiveScene={activeSceneId !== null}
             saveStatus={saveStatus}
           />
+
+          {suggestions && (
+            <SuggestionPanel
+              projectId={projectId}
+              suggestions={suggestions}
+              onClose={() => setSuggestions(null)}
+            />
+          )}
 
           <PromptBar
             prompt={prompt}

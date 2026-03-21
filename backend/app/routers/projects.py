@@ -11,6 +11,7 @@ Endpoints:
   PATCH  /projects/{project_id}/scenes/{gen_id}   — Update scene
   DELETE /projects/{project_id}/scenes/{gen_id}   — Delete scene
   POST   /projects/{project_id}/scenes/reorder    — Bulk reorder
+  POST   /projects/{project_id}/bible/entry       — Add bible entry
 """
 
 import logging
@@ -18,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_user
 from app.models.project_schemas import (
@@ -613,3 +615,56 @@ async def reorder_scenes(
         project_id,
     )
     return {"reordered": True, "count": len(reorder_request.scene_ids)}
+
+
+# --- Story Bible Entry Management ---
+
+
+class BibleEntryRequest(BaseModel):
+    """Add a single entry to a section of the Story Bible."""
+
+    section: str  # "characters", "locations", "world_rules", "plot_beats"
+    entry: dict
+
+
+@router.post("/{project_id}/bible/entry")
+async def add_bible_entry(
+    project_id: str,
+    bible_request: BibleEntryRequest,
+    user_id: Annotated[str, Depends(get_current_user)],
+) -> dict[str, bool]:
+    """Approve and add a single extraction suggestion to the Story Bible.
+
+    Appends the entry to the specified section of the story_bible JSONB.
+    Creates the section array if it doesn't exist yet.
+    """
+    project = _verify_project_ownership(project_id, user_id)
+    supabase = get_supabase_client()
+
+    story_bible = project.get("story_bible") or {}
+    section = bible_request.section
+
+    # Initialize section as array if missing
+    if section not in story_bible or not isinstance(story_bible[section], list):
+        story_bible[section] = []
+
+    story_bible[section].append(bible_request.entry)
+
+    try:
+        supabase.table("projects").update(
+            {
+                "story_bible": story_bible,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", project_id).eq("user_id", user_id).execute()
+    except Exception as e:
+        logger.error("[PROJECTS] Failed to add bible entry: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update Story Bible.",
+        )
+
+    logger.info(
+        "[PROJECTS] Added %s entry to project %s bible", section, project_id
+    )
+    return {"added": True}
