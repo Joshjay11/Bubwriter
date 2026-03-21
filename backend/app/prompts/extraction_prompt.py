@@ -28,5 +28,38 @@ Return ONLY a JSON object with this structure:
   "new_locations": [{"name": "...", "description": "...", "sensory_details": {"visual": "...", "auditory": "...", "tactile": "..."}, "first_appearance": "..."}],
   "character_updates": [{"character_name": "...", "character_id": null, "update_type": "new_knowledge|status_change|relationship|knowledge_boundary", "detail": "..."}],
   "new_world_rules": [{"category": "...", "rule": "...", "exceptions": [], "implications": "..."}],
-  "plot_beats": [{"beat": "...", "characters_involved": ["..."], "consequences": ["..."]}]
+  "plot_beats": [{"beat": "...", "characters_involved": ["..."], "consequences": ["..."]}],
+  "knowledge_events": []
+}
+
+ALSO analyze information asymmetry in this scene:
+
+6. SECRETS ESTABLISHED: If the scene establishes information that some characters know and others don't, identify it.
+   - What is the secret or restricted information?
+   - Which characters are present/witness it?
+   - Which existing characters explicitly do NOT know this yet?
+
+7. KNOWLEDGE GAINED: If an existing character learns something new in this scene, record it.
+   - What did they learn?
+   - How did they learn it? (told, overheard, discovered, witnessed, deduced)
+
+8. POV LEAK WARNINGS: If a character acts on or references information they shouldn't know based on the Story Bible, flag it.
+   - Which character?
+   - What information did they act on?
+   - Why shouldn't they know it?
+
+Add knowledge events to the JSON response:
+{
+  ...all categories above...,
+  "knowledge_events": [
+    {
+      "type": "secret_established|knowledge_gained|pov_leak_warning",
+      "summary": "...",
+      "character_names": ["..."],
+      "witnesses": ["..."],
+      "non_witnesses": ["..."],
+      "method": "told|overheard|discovered|witnessed|deduced",
+      "issue": "..." (for pov_leak_warning only)
+    }
+  ]
 }"""

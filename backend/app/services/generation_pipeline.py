@@ -33,7 +33,10 @@ def sse_event(event_type: str, **kwargs: object) -> str:
 # --- Story Context Builders ---
 
 def build_story_context(project: dict | None) -> str:
-    """Extract story context from a project's story_bible."""
+    """Extract story context from a project's story_bible.
+
+    Includes POV-aware knowledge constraints from story_secrets.
+    """
     if not project:
         return ""
 
@@ -45,9 +48,63 @@ def build_story_context(project: dict | None) -> str:
     if project.get("genre"):
         lines.append(f"Genre: {project['genre']}")
 
+    # Standard bible entries (skip structured sections handled below)
+    structured_sections = {"characters", "locations", "world_rules", "plot_beats",
+                           "story_secrets", "character_updates", "character_states",
+                           "timeline", "object_states"}
     for key, value in story_bible.items():
+        if key in structured_sections:
+            continue
         if value:
             lines.append(f"{key}: {value}")
+
+    # Format characters with knowledge
+    characters = story_bible.get("characters", [])
+    if characters:
+        lines.append("\nCHARACTERS:")
+        for c in characters:
+            role = c.get("role", "")
+            desc = c.get("description", "")
+            char_line = f"- {c.get('name', 'unnamed')}"
+            if role:
+                char_line += f" ({role})"
+            if desc:
+                char_line += f": {desc}"
+            lines.append(char_line)
+
+    # Format locations
+    locations = story_bible.get("locations", [])
+    if locations:
+        lines.append("\nLOCATIONS:")
+        for loc in locations:
+            lines.append(f"- {loc.get('name', 'unnamed')}: {loc.get('description', '')}")
+
+    # Format world rules
+    world_rules = story_bible.get("world_rules", [])
+    if world_rules:
+        lines.append("\nWORLD RULES:")
+        for r in world_rules:
+            lines.append(f"- [{r.get('category', '')}] {r.get('rule', '')}")
+
+    # Knowledge constraints — POV-aware secrets
+    secrets = story_bible.get("story_secrets", [])
+    if secrets:
+        secret_lines = []
+        for s in secrets:
+            who_knows = ", ".join(s.get("characters_who_know", []))
+            who_doesnt = ", ".join(s.get("characters_who_dont_know", []))
+            secret_lines.append(
+                f"- SECRET: {s.get('summary', '')}\n"
+                f"  Known by: {who_knows or 'no one yet'}\n"
+                f"  Unknown to: {who_doesnt or 'n/a'}"
+            )
+        lines.append(
+            "\nINFORMATION ASYMMETRY (POV CONSTRAINTS):\n"
+            + "\n".join(secret_lines)
+            + "\n\nCRITICAL: Characters cannot act on or reference information "
+            "they don't know. Any suspicious behavior must be motivated by "
+            "on-page evidence only."
+        )
 
     return "\n".join(lines)
 
@@ -320,6 +377,7 @@ async def run_generation_pipeline(
                 or suggestions.character_updates
                 or suggestions.new_world_rules
                 or suggestions.plot_beats
+                or suggestions.knowledge_events
             )
 
             if has_suggestions:

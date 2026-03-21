@@ -58,6 +58,16 @@ class PlotBeatSuggestion(BaseModel):
     consequences: list[str] = Field(default_factory=list)
 
 
+class KnowledgeEvent(BaseModel):
+    type: str  # "secret_established", "knowledge_gained", "pov_leak_warning"
+    summary: str
+    character_names: list[str] = Field(default_factory=list)
+    witnesses: list[str] = Field(default_factory=list)
+    non_witnesses: list[str] = Field(default_factory=list)
+    method: str | None = None  # how they learned it
+    issue: str | None = None  # for POV leak warnings
+
+
 class ExtractionResult(BaseModel):
     """All fields Optional — LLM won't always find every category."""
 
@@ -66,6 +76,7 @@ class ExtractionResult(BaseModel):
     character_updates: list[CharacterUpdate] = Field(default_factory=list)
     new_world_rules: list[WorldRuleSuggestion] = Field(default_factory=list)
     plot_beats: list[PlotBeatSuggestion] = Field(default_factory=list)
+    knowledge_events: list[KnowledgeEvent] = Field(default_factory=list)
 
 
 # ── Extraction Logic ─────────────────────────────────────
@@ -86,6 +97,17 @@ def _format_bible_for_extraction(bible: dict) -> str:
     if bible.get("world_rules"):
         rules = [f"- {r.get('rule', '')}" for r in bible["world_rules"]]
         parts.append("Established world rules:\n" + "\n".join(rules))
+    if bible.get("story_secrets"):
+        secrets = []
+        for s in bible["story_secrets"]:
+            who_knows = ", ".join(s.get("characters_who_know", []))
+            who_doesnt = ", ".join(s.get("characters_who_dont_know", []))
+            secrets.append(
+                f"- SECRET: {s.get('summary', '')}\n"
+                f"  Known by: {who_knows or 'no one yet'}\n"
+                f"  Unknown to: {who_doesnt or 'n/a'}"
+            )
+        parts.append("Active secrets:\n" + "\n".join(secrets))
     return "\n\n".join(parts) if parts else "(Empty — no entries yet)"
 
 
@@ -170,12 +192,13 @@ async def extract_story_facts(
     ]
 
     logger.info(
-        "[EXTRACTION] Found %d characters, %d locations, %d updates, %d rules, %d beats",
+        "[EXTRACTION] Found %d characters, %d locations, %d updates, %d rules, %d beats, %d knowledge events",
         len(result.new_characters),
         len(result.new_locations),
         len(result.character_updates),
         len(result.new_world_rules),
         len(result.plot_beats),
+        len(result.knowledge_events),
     )
     return result
 

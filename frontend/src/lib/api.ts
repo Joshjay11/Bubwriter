@@ -234,12 +234,23 @@ export interface PlotBeatSuggestion {
   consequences: string[];
 }
 
+export interface KnowledgeEvent {
+  type: string; // "secret_established", "knowledge_gained", "pov_leak_warning"
+  summary: string;
+  character_names: string[];
+  witnesses: string[];
+  non_witnesses: string[];
+  method: string | null;
+  issue: string | null; // for pov_leak_warning
+}
+
 export interface ExtractionSuggestions {
   new_characters: CharacterSuggestion[];
   new_locations: LocationSuggestion[];
   character_updates: CharacterUpdate[];
   new_world_rules: WorldRuleSuggestion[];
   plot_beats: PlotBeatSuggestion[];
+  knowledge_events: KnowledgeEvent[];
 }
 
 export async function apiGenerationStream(

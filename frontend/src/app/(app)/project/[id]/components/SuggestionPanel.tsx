@@ -8,6 +8,7 @@ import type {
   CharacterUpdate,
   WorldRuleSuggestion,
   PlotBeatSuggestion,
+  KnowledgeEvent,
 } from "@/lib/api";
 import { addBibleEntry } from "@/lib/api";
 
@@ -45,7 +46,8 @@ export function SuggestionPanel({
     suggestions.new_locations.filter((_, i) => isVisible(`loc_${i}`)).length +
     suggestions.character_updates.filter((_, i) => isVisible(`update_${i}`)).length +
     suggestions.new_world_rules.filter((_, i) => isVisible(`rule_${i}`)).length +
-    suggestions.plot_beats.filter((_, i) => isVisible(`beat_${i}`)).length;
+    suggestions.plot_beats.filter((_, i) => isVisible(`beat_${i}`)).length +
+    (suggestions.knowledge_events ?? []).filter((_, i) => isVisible(`know_${i}`)).length;
 
   if (totalVisible === 0) return null;
 
@@ -168,6 +170,41 @@ export function SuggestionPanel({
                   source: "auto",
                 })
               }
+              onDismiss={() => dismiss(key)}
+            />
+          );
+        })}
+
+        {(suggestions.knowledge_events ?? []).map((k, i) => {
+          const key = `know_${i}`;
+          if (!isVisible(key)) return null;
+          return (
+            <KnowledgeEventCard
+              key={key}
+              event={k}
+              onApprove={() => {
+                if (k.type === "secret_established") {
+                  approve(key, "story_secrets", {
+                    id: `secret_${Date.now()}_${i}`,
+                    summary: k.summary,
+                    characters_who_know: k.witnesses,
+                    characters_who_dont_know: k.non_witnesses,
+                    reveal_status: "restricted",
+                    source: "auto",
+                  });
+                } else if (k.type === "knowledge_gained") {
+                  approve(key, "character_updates", {
+                    character_name: k.character_names[0] ?? "unknown",
+                    update_type: "new_knowledge",
+                    detail: k.summary,
+                    method: k.method,
+                    source: "auto",
+                  });
+                } else {
+                  // pov_leak_warning — just dismiss, it's informational
+                  dismiss(key);
+                }
+              }}
               onDismiss={() => dismiss(key)}
             />
           );
@@ -311,5 +348,85 @@ function PlotBeatCard({
         </p>
       )}
     </CardShell>
+  );
+}
+
+function KnowledgeEventCard({
+  event,
+  onApprove,
+  onDismiss,
+}: {
+  event: KnowledgeEvent;
+  onApprove: () => void;
+  onDismiss: () => void;
+}) {
+  if (event.type === "pov_leak_warning") {
+    return (
+      <div className="bg-amber-950/40 rounded-lg p-3 text-sm max-w-xs border border-amber-700/50">
+        <span className="inline-block text-[10px] font-semibold uppercase tracking-wider mb-1 text-amber-400">
+          POV Leak Warning
+        </span>
+        <div className="text-zinc-300 mb-2">
+          <p className="font-medium text-amber-300">{event.issue ?? event.summary}</p>
+          {event.character_names.length > 0 && (
+            <p className="text-zinc-400 text-xs mt-0.5">
+              Character: {event.character_names.join(", ")}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onDismiss}
+            className="text-xs px-2 py-1 rounded bg-zinc-700/40 text-zinc-400 hover:text-zinc-300"
+          >
+            Intentional — dismiss
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const label = event.type === "secret_established" ? "Secret" : "Knowledge Gained";
+  const color = event.type === "secret_established" ? "text-orange-400" : "text-cyan-400";
+  const approveLabel = event.type === "secret_established" ? "Track Secret" : "Add to Bible";
+
+  return (
+    <div className="bg-zinc-800/60 rounded-lg p-3 text-sm max-w-xs border border-zinc-700/50">
+      <span
+        className={`inline-block text-[10px] font-semibold uppercase tracking-wider mb-1 ${color}`}
+      >
+        {label}
+      </span>
+      <div className="text-zinc-300 mb-2">
+        <p>{event.summary}</p>
+        {event.witnesses.length > 0 && (
+          <p className="text-zinc-500 text-xs mt-0.5">
+            Witnesses: {event.witnesses.join(", ")}
+          </p>
+        )}
+        {event.non_witnesses.length > 0 && (
+          <p className="text-zinc-500 text-xs mt-0.5">
+            Unaware: {event.non_witnesses.join(", ")}
+          </p>
+        )}
+        {event.method && (
+          <p className="text-zinc-500 text-xs mt-0.5">Method: {event.method}</p>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={onApprove}
+          className="text-xs px-2 py-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
+        >
+          {approveLabel}
+        </button>
+        <button
+          onClick={onDismiss}
+          className="text-xs px-2 py-1 rounded bg-zinc-700/40 text-zinc-500 hover:text-zinc-300"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
   );
 }
