@@ -13,6 +13,7 @@ from app.config import settings
 from app.routers import (
     analyze_free,
     billing,
+    brainstorm,
     conversation_import,
     generation,
     health,
@@ -44,3 +45,4 @@ app.include_router(generation.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(analyze_free.router, prefix="/api")
 app.include_router(voice_profiles.router, prefix="/api")
+app.include_router(brainstorm.router, prefix="/api")

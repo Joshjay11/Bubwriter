@@ -551,3 +551,90 @@ export async function addBibleEntry(
     }
   );
 }
+
+// --- Brainstorm API ---
+
+export interface BrainstormDoneData {
+  session_id?: string;
+  questions_asked: number;
+}
+
+export interface IdeaEvaluation {
+  premise_clarity: number;
+  stakes_strength: number;
+  conflict_depth: number;
+  genre_fit: string;
+  series_potential: string;
+  target_audience: string;
+  unresolved_questions: string[];
+  extracted_bible_entries: Record<string, unknown[]>;
+}
+
+export async function apiBrainstormStream(
+  path: string,
+  body: Record<string, unknown>,
+  onToken: (content: string) => void,
+  onDone: (data: BrainstormDoneData) => void
+): Promise<void> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error: ApiError = await response.json().catch(() => ({
+      detail: `Request failed with status ${response.status}`,
+    }));
+    throw new Error(error.detail);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.type === "token" && data.content) {
+          onToken(data.content);
+        } else if (data.type === "done") {
+          onDone({
+            session_id: data.session_id,
+            questions_asked: data.questions_asked ?? 0,
+          });
+          return;
+        } else if (data.type === "error") {
+          throw new Error(data.content ?? "Brainstorm error");
+        }
+      } catch (e) {
+        if (e instanceof SyntaxError) continue;
+        throw e;
+      }
+    }
+  }
+}
+
+export async function evaluateBrainstorm(
+  sessionId: string
+): Promise<{ evaluation: IdeaEvaluation; questions_asked: number }> {
+  return apiFetch<{ evaluation: IdeaEvaluation; questions_asked: number }>(
+    "/api/brainstorm/evaluate",
+    {
+      method: "POST",
+      body: JSON.stringify({ session_id: sessionId }),
+    }
+  );
+}
