@@ -244,6 +244,26 @@ export interface KnowledgeEvent {
   issue: string | null; // for pov_leak_warning
 }
 
+export interface TimelineEvent {
+  event: string;
+  when: string;
+  characters_present: string[];
+}
+
+export interface StateChange {
+  entity_type: string; // "character", "object", "location"
+  entity_name: string;
+  state_type: string; // "physical", "emotional", "resource", "relationship"
+  description: string;
+  previous_state: string | null;
+}
+
+export interface ContradictionWarning {
+  issue: string;
+  conflicting_fact: string;
+  established_in: string;
+}
+
 export interface ExtractionSuggestions {
   new_characters: CharacterSuggestion[];
   new_locations: LocationSuggestion[];
@@ -251,6 +271,9 @@ export interface ExtractionSuggestions {
   new_world_rules: WorldRuleSuggestion[];
   plot_beats: PlotBeatSuggestion[];
   knowledge_events: KnowledgeEvent[];
+  timeline_events: TimelineEvent[];
+  state_changes: StateChange[];
+  contradiction_warnings: ContradictionWarning[];
 }
 
 export async function apiGenerationStream(

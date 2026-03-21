@@ -106,6 +106,43 @@ def build_story_context(project: dict | None) -> str:
             "on-page evidence only."
         )
 
+    # Timeline context
+    timeline = story_bible.get("timeline", [])
+    if timeline:
+        lines.append("\nTIMELINE (recent events):")
+        # Show last 10 events to avoid context bloat
+        for t in timeline[-10:]:
+            chars = ", ".join(t.get("characters_present", []))
+            when = t.get("when", "?")
+            lines.append(f"- [{when}] {t.get('event', '')}")
+            if chars:
+                lines.append(f"  Present: {chars}")
+
+    # Active character states (injuries, emotional states)
+    char_states = story_bible.get("character_states", [])
+    active_states = [s for s in char_states if s.get("status") == "active"]
+    if active_states:
+        lines.append("\nACTIVE CHARACTER STATES:")
+        for s in active_states:
+            lines.append(
+                f"- {s.get('character_id', '?')} [{s.get('state_type', '')}]: "
+                f"{s.get('description', '')}"
+            )
+        lines.append(
+            "\nIMPORTANT: Active injuries and physical states must be reflected "
+            "in character behavior. A character with broken ribs cannot sprint. "
+            "A character who hasn't slept in two days shows fatigue."
+        )
+
+    # Object states
+    obj_states = story_bible.get("object_states", [])
+    if obj_states:
+        lines.append("\nOBJECT STATES:")
+        for o in obj_states:
+            lines.append(
+                f"- {o.get('object_name', '?')}: {o.get('current_state', '')}"
+            )
+
     return "\n".join(lines)
 
 
@@ -378,6 +415,9 @@ async def run_generation_pipeline(
                 or suggestions.new_world_rules
                 or suggestions.plot_beats
                 or suggestions.knowledge_events
+                or suggestions.timeline_events
+                or suggestions.state_changes
+                or suggestions.contradiction_warnings
             )
 
             if has_suggestions:

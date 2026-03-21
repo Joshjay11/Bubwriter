@@ -9,6 +9,9 @@ import type {
   WorldRuleSuggestion,
   PlotBeatSuggestion,
   KnowledgeEvent,
+  TimelineEvent,
+  StateChange,
+  ContradictionWarning,
 } from "@/lib/api";
 import { addBibleEntry } from "@/lib/api";
 
@@ -47,7 +50,10 @@ export function SuggestionPanel({
     suggestions.character_updates.filter((_, i) => isVisible(`update_${i}`)).length +
     suggestions.new_world_rules.filter((_, i) => isVisible(`rule_${i}`)).length +
     suggestions.plot_beats.filter((_, i) => isVisible(`beat_${i}`)).length +
-    (suggestions.knowledge_events ?? []).filter((_, i) => isVisible(`know_${i}`)).length;
+    (suggestions.knowledge_events ?? []).filter((_, i) => isVisible(`know_${i}`)).length +
+    (suggestions.timeline_events ?? []).filter((_, i) => isVisible(`time_${i}`)).length +
+    (suggestions.state_changes ?? []).filter((_, i) => isVisible(`state_${i}`)).length +
+    (suggestions.contradiction_warnings ?? []).filter((_, i) => isVisible(`contra_${i}`)).length;
 
   if (totalVisible === 0) return null;
 
@@ -205,6 +211,71 @@ export function SuggestionPanel({
                   dismiss(key);
                 }
               }}
+              onDismiss={() => dismiss(key)}
+            />
+          );
+        })}
+
+        {(suggestions.contradiction_warnings ?? []).map((w, i) => {
+          const key = `contra_${i}`;
+          if (!isVisible(key)) return null;
+          return (
+            <ContradictionCard
+              key={key}
+              warning={w}
+              onDismiss={() => dismiss(key)}
+            />
+          );
+        })}
+
+        {(suggestions.timeline_events ?? []).map((t, i) => {
+          const key = `time_${i}`;
+          if (!isVisible(key)) return null;
+          return (
+            <TimelineCard
+              key={key}
+              event={t}
+              onApprove={() =>
+                approve(key, "timeline", {
+                  id: `time_${Date.now()}_${i}`,
+                  event: t.event,
+                  when: t.when,
+                  characters_present: t.characters_present,
+                  source: "auto",
+                })
+              }
+              onDismiss={() => dismiss(key)}
+            />
+          );
+        })}
+
+        {(suggestions.state_changes ?? []).map((s, i) => {
+          const key = `state_${i}`;
+          if (!isVisible(key)) return null;
+          const section =
+            s.entity_type === "character"
+              ? "character_states"
+              : "object_states";
+          return (
+            <StateChangeCard
+              key={key}
+              change={s}
+              onApprove={() =>
+                approve(key, section, {
+                  ...(s.entity_type === "character"
+                    ? {
+                        character_id: s.entity_name,
+                        state_type: s.state_type,
+                        description: s.description,
+                        status: "active",
+                      }
+                    : {
+                        object_name: s.entity_name,
+                        current_state: s.description,
+                      }),
+                  source: "auto",
+                })
+              }
               onDismiss={() => dismiss(key)}
             />
           );
@@ -428,5 +499,98 @@ function KnowledgeEventCard({
         </button>
       </div>
     </div>
+  );
+}
+
+function ContradictionCard({
+  warning,
+  onDismiss,
+}: {
+  warning: ContradictionWarning;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="bg-red-950/40 rounded-lg p-3 text-sm max-w-xs border border-red-700/50">
+      <span className="inline-block text-[10px] font-semibold uppercase tracking-wider mb-1 text-red-400">
+        Contradiction
+      </span>
+      <div className="text-zinc-300 mb-2">
+        <p className="font-medium text-red-300">{warning.issue}</p>
+        {warning.conflicting_fact && (
+          <p className="text-zinc-400 text-xs mt-0.5">
+            Conflicts with: {warning.conflicting_fact}
+          </p>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={onDismiss}
+          className="text-xs px-2 py-1 rounded bg-zinc-700/40 text-zinc-400 hover:text-zinc-300"
+        >
+          Intentional — dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TimelineCard({
+  event,
+  onApprove,
+  onDismiss,
+}: {
+  event: TimelineEvent;
+  onApprove: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <CardShell label="Timeline" color="text-sky-400" onApprove={onApprove} onDismiss={onDismiss}>
+      <p className="text-zinc-300">{event.event}</p>
+      {event.when && (
+        <p className="text-zinc-500 text-xs mt-0.5">When: {event.when}</p>
+      )}
+      {event.characters_present.length > 0 && (
+        <p className="text-zinc-500 text-xs mt-0.5">
+          Present: {event.characters_present.join(", ")}
+        </p>
+      )}
+    </CardShell>
+  );
+}
+
+function StateChangeCard({
+  change,
+  onApprove,
+  onDismiss,
+}: {
+  change: StateChange;
+  onApprove: () => void;
+  onDismiss: () => void;
+}) {
+  const label =
+    change.entity_type === "character"
+      ? "Character State"
+      : change.entity_type === "object"
+        ? "Object State"
+        : "Location State";
+  const color =
+    change.entity_type === "character"
+      ? "text-pink-400"
+      : change.entity_type === "object"
+        ? "text-yellow-400"
+        : "text-lime-400";
+
+  return (
+    <CardShell label={label} color={color} onApprove={onApprove} onDismiss={onDismiss}>
+      <p className="font-medium text-zinc-200">{change.entity_name}</p>
+      <p className="text-zinc-400 text-xs mt-0.5">
+        {change.state_type}: {change.description}
+      </p>
+      {change.previous_state && (
+        <p className="text-zinc-500 text-xs mt-0.5">
+          Was: {change.previous_state}
+        </p>
+      )}
+    </CardShell>
   );
 }

@@ -62,4 +62,41 @@ Add knowledge events to the JSON response:
       "issue": "..." (for pov_leak_warning only)
     }
   ]
+}
+
+ALSO analyze temporal and state progression in this scene:
+
+9. TIME PROGRESSION: If the scene establishes or implies time passing, note it.
+   - What time of day is it? What day/date?
+   - How much time has passed since the last scene?
+   - Are there any travel durations that should be tracked?
+
+10. CHARACTER STATE CHANGES: Track cumulative physical and emotional states.
+   - Injuries acquired or worsened
+   - Emotional state shifts (trust broken, alliance formed)
+   - Resource depletion (ammo, supplies, money)
+
+11. OBJECT/LOCATION STATE CHANGES: Track changes to things.
+   - Weapons fired, damaged, or lost
+   - Locations destroyed, locked, or revealed
+   - Documents found, read, or destroyed
+
+12. CONTRADICTION WARNINGS: If this scene contradicts previously established facts, flag it.
+   - A character is in two places at once
+   - An injury from a previous scene isn't reflected
+   - Time doesn't add up (travel duration, day of week)
+   - An object is used that was previously established as lost/destroyed
+
+Add these to the JSON response:
+{
+  ...all categories above...,
+  "timeline_events": [
+    {"event": "...", "when": "...", "characters_present": ["..."]}
+  ],
+  "state_changes": [
+    {"entity_type": "character|object|location", "entity_name": "...", "state_type": "physical|emotional|resource|relationship", "description": "...", "previous_state": "..."}
+  ],
+  "contradiction_warnings": [
+    {"issue": "...", "conflicting_fact": "...", "established_in": "..."}
+  ]
 }"""

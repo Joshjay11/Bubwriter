@@ -68,6 +68,26 @@ class KnowledgeEvent(BaseModel):
     issue: str | None = None  # for POV leak warnings
 
 
+class TimelineEvent(BaseModel):
+    event: str
+    when: str = ""
+    characters_present: list[str] = Field(default_factory=list)
+
+
+class StateChange(BaseModel):
+    entity_type: str  # "character", "object", "location"
+    entity_name: str
+    state_type: str  # "physical", "emotional", "resource", "relationship"
+    description: str
+    previous_state: str | None = None
+
+
+class ContradictionWarning(BaseModel):
+    issue: str
+    conflicting_fact: str = ""
+    established_in: str = ""
+
+
 class ExtractionResult(BaseModel):
     """All fields Optional — LLM won't always find every category."""
 
@@ -77,6 +97,9 @@ class ExtractionResult(BaseModel):
     new_world_rules: list[WorldRuleSuggestion] = Field(default_factory=list)
     plot_beats: list[PlotBeatSuggestion] = Field(default_factory=list)
     knowledge_events: list[KnowledgeEvent] = Field(default_factory=list)
+    timeline_events: list[TimelineEvent] = Field(default_factory=list)
+    state_changes: list[StateChange] = Field(default_factory=list)
+    contradiction_warnings: list[ContradictionWarning] = Field(default_factory=list)
 
 
 # ── Extraction Logic ─────────────────────────────────────
@@ -108,6 +131,27 @@ def _format_bible_for_extraction(bible: dict) -> str:
                 f"  Unknown to: {who_doesnt or 'n/a'}"
             )
         parts.append("Active secrets:\n" + "\n".join(secrets))
+    if bible.get("timeline"):
+        events = [
+            f"- {t.get('when', '?')}: {t.get('event', '')}"
+            for t in bible["timeline"]
+        ]
+        parts.append("Timeline:\n" + "\n".join(events))
+    if bible.get("character_states"):
+        states = [
+            f"- {s.get('character_id', '?')} [{s.get('state_type', '')}]: "
+            f"{s.get('description', '')} (status: {s.get('status', 'active')})"
+            for s in bible["character_states"]
+            if s.get("status") == "active"
+        ]
+        if states:
+            parts.append("Active character states:\n" + "\n".join(states))
+    if bible.get("object_states"):
+        objects = [
+            f"- {o.get('object_name', '?')}: {o.get('current_state', '')}"
+            for o in bible["object_states"]
+        ]
+        parts.append("Object states:\n" + "\n".join(objects))
     return "\n\n".join(parts) if parts else "(Empty — no entries yet)"
 
 
@@ -192,13 +236,17 @@ async def extract_story_facts(
     ]
 
     logger.info(
-        "[EXTRACTION] Found %d characters, %d locations, %d updates, %d rules, %d beats, %d knowledge events",
+        "[EXTRACTION] Found %d chars, %d locs, %d updates, %d rules, %d beats, "
+        "%d knowledge, %d timeline, %d states, %d contradictions",
         len(result.new_characters),
         len(result.new_locations),
         len(result.character_updates),
         len(result.new_world_rules),
         len(result.plot_beats),
         len(result.knowledge_events),
+        len(result.timeline_events),
+        len(result.state_changes),
+        len(result.contradiction_warnings),
     )
     return result
 
