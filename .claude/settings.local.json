@@ -13,7 +13,25 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/models/schemas.py''\\).read\\(\\)\\); print\\(''schemas.py: syntax OK''\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/services/generation_pipeline.py''\\).read\\(\\)\\); print\\(''generation_pipeline.py: syntax OK''\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/routers/generation.py''\\).read\\(\\)\\); print\\(''generation.py: syntax OK''\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/config.py''\\).read\\(\\)\\); print\\(''config.py: syntax OK''\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/config.py''\\).read\\(\\)\\); print\\(''config.py: syntax OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/services/extraction_service.py''\\).read\\(\\)\\); print\\(''extraction_service.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/prompts/extraction_prompt.py''\\).read\\(\\)\\); print\\(''extraction_prompt.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/routers/projects.py''\\).read\\(\\)\\); print\\(''projects.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/services/generation_pipeline.py''\\).read\\(\\)\\); print\\(''generation_pipeline.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/prompts/extraction_prompt.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''extraction_prompt.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/routers/projects.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''projects.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/services/generation_pipeline.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''generation_pipeline.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/prompts/extraction_prompt.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/services/extraction_service.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/services/generation_pipeline.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(python -c \"import sys,json; vs=[v for v in json.load\\(sys.stdin\\) if v.startswith\\(''''16.''''\\)]; print\\(vs[-1] if vs else ''''No 16.x found''''\\)\")",
+      "Bash(npm view:*)",
+      "Bash(cd:*)",
+      "Bash(npx next:*)",
+      "Bash(cp backend/app/config/genre_guardrails.py backend/app/services/genre_guardrails.py)",
+      "Bash(rm backend/app/config/genre_guardrails.py)",
+      "Bash(rm backend/app/config/__init__.py)",
+      "Bash(rmdir backend/app/config)"
     ]
   }
 }

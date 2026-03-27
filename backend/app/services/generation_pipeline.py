@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator
 
 from pydantic import ValidationError
 
-from app.config.genre_guardrails import build_genre_guardrails
+from app.services.genre_guardrails import build_genre_guardrails
 from app.models.generation_schemas import SceneSkeleton, VoiceMode
 from app.services.anti_slop import build_anti_slop_block
 from app.services.brain_service import run_brain
