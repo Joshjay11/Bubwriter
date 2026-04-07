@@ -77,3 +77,13 @@ class RefineRequest(BaseModel):
     voice_profile_id: str
     include_polish: bool = False
     voice_mode: VoiceMode = VoiceMode.default
+
+
+class BeatGenerateRequest(BaseModel):
+    """Generate prose from a specific outline beat."""
+    project_id: str
+    voice_profile_id: str
+    beat_id: str
+    additional_context: str | None = None
+    include_polish: bool = False
+    voice_mode: VoiceMode = VoiceMode.default

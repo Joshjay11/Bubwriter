@@ -10,12 +10,14 @@ from collections.abc import AsyncGenerator
 
 from pydantic import ValidationError
 
+from app.core.features import is_enabled
 from app.services.genre_guardrails import build_genre_guardrails
 from app.models.generation_schemas import SceneSkeleton, VoiceMode
 from app.services.anti_slop import build_anti_slop_block
 from app.services.brain_service import run_brain
 from app.services.extraction_service import extract_story_facts
 from app.services.polish_service import run_polish
+from app.services.slop_validator import slop_validator
 from app.services.supabase_client import get_supabase_client
 from app.services.voice_service import format_skeleton_for_voice, stream_voice
 
@@ -51,7 +53,7 @@ def build_story_context(project: dict | None) -> str:
     # Standard bible entries (skip structured sections handled below)
     structured_sections = {"characters", "locations", "world_rules", "plot_beats",
                            "story_secrets", "character_updates", "character_states",
-                           "timeline", "object_states"}
+                           "timeline", "object_states", "outline"}
     for key, value in story_bible.items():
         if key in structured_sections:
             continue
@@ -363,6 +365,14 @@ async def run_generation_pipeline(
         yield sse_event("error", content="Voice model returned empty output.")
         return
 
+    # ─── SLOP VALIDATION (feature-gated) ────────────────────
+    if is_enabled("slop_validator"):
+        try:
+            slop_result = slop_validator.validate(full_output, {"anti_slop": anti_slop or {}})
+            yield sse_event("slop_score", data=slop_result)
+        except Exception as e:
+            logger.warning("[GENERATION] Slop validation failed (non-fatal): %s", e)
+
     # ─── STAGE 3: THE POLISH (Author tier only) ─────────────
     polished_output = None
     if include_polish:
@@ -394,8 +404,8 @@ async def run_generation_pipeline(
         logger.error("[GENERATION] Failed to update generation: %s", e)
         # Non-fatal — the user still saw the output
 
-    # ─── POST-GENERATION: EXTRACTION LOOP ───────────────────
-    if project:
+    # ─── POST-GENERATION: EXTRACTION LOOP (feature-gated) ───
+    if project and is_enabled("extraction_loop"):
         existing_bible = project.get("story_bible") or {}
         try:
             yield sse_event(
@@ -407,6 +417,14 @@ async def run_generation_pipeline(
                 existing_bible=existing_bible,
                 genre=project.get("genre"),
             )
+
+            # Filter out knowledge/timeline results if those features are disabled
+            if not is_enabled("knowledge_state"):
+                suggestions.knowledge_events = []
+            if not is_enabled("timeline_engine"):
+                suggestions.timeline_events = []
+                suggestions.state_changes = []
+                suggestions.contradiction_warnings = []
 
             has_suggestions = (
                 suggestions.new_characters
@@ -555,3 +573,220 @@ async def run_refine_pipeline(
         "voice_mode": voice_mode.value,
         "voice_model": voice_model or "deepseek-v3",
     })
+
+
+# --- Beat-Driven Generation ---
+
+
+def find_beat_in_outline(
+    outline: dict, beat_id: str
+) -> tuple[dict | None, dict | None, dict | None]:
+    """Locate a beat in the outline. Returns (beat, chapter, part) or (None, None, None)."""
+    for part in outline.get("parts", []):
+        for chapter in part.get("chapters", []):
+            for beat in chapter.get("beats", []):
+                if beat.get("beat_id") == beat_id:
+                    return beat, chapter, part
+    return None, None, None
+
+
+def _find_previous_beat_id(outline: dict, current_beat_id: str) -> str | None:
+    """Find the beat_id of the beat immediately before the current one."""
+    all_beats: list[str] = []
+    for part in outline.get("parts", []):
+        for chapter in part.get("chapters", []):
+            for beat in chapter.get("beats", []):
+                all_beats.append(beat.get("beat_id", ""))
+
+    try:
+        idx = all_beats.index(current_beat_id)
+        return all_beats[idx - 1] if idx > 0 else None
+    except ValueError:
+        return None
+
+
+async def get_previous_beat_output(
+    outline: dict, beat_id: str, project_id: str
+) -> str | None:
+    """Load the voice_output from the previous beat's generation for continuity."""
+    prev_beat_id = _find_previous_beat_id(outline, beat_id)
+    if not prev_beat_id:
+        return None
+
+    prev_beat, _, _ = find_beat_in_outline(outline, prev_beat_id)
+    if not prev_beat or not prev_beat.get("generation_id"):
+        return None
+
+    supabase = get_supabase_client()
+    result = (
+        supabase.table("generations")
+        .select("voice_output")
+        .eq("id", prev_beat["generation_id"])
+        .execute()
+    )
+    if result.data and result.data[0].get("voice_output"):
+        return result.data[0]["voice_output"]
+    return None
+
+
+def build_beat_prompt(
+    beat: dict,
+    chapter: dict,
+    part: dict,
+    previous_output: str | None,
+    additional_context: str | None,
+) -> str:
+    """Build a generation prompt from outline beat context."""
+    parts = []
+
+    parts.append(f"Write Chapter {chapter.get('chapter_number', '?')}: {chapter.get('title', '')}")
+    parts.append(f"\nBEAT: {beat.get('template_beat', '')}")
+    parts.append(f"WHAT HAPPENS: {beat.get('description', '')}")
+
+    if beat.get("pov_character"):
+        parts.append(f"POV: {beat['pov_character']}")
+
+    if beat.get("estimated_words"):
+        parts.append(f"TARGET LENGTH: ~{beat['estimated_words']} words")
+
+    if previous_output:
+        last_500 = " ".join(previous_output.split()[-500:])
+        parts.append(f"\nPREVIOUS SCENE ENDED WITH:\n...{last_500}")
+        parts.append("\nContinue seamlessly from where the previous scene left off.")
+
+    if additional_context:
+        parts.append(f"\nAUTHOR'S NOTES: {additional_context}")
+
+    return "\n".join(parts)
+
+
+async def update_beat_status(
+    project_id: str,
+    beat_id: str,
+    new_status: str,
+    generation_id: str | None = None,
+    clear_generation_id: bool = False,
+) -> None:
+    """Update a beat's status and generation_id in the project's outline.
+
+    If clear_generation_id=True, sets generation_id to None (used on rollback).
+    """
+    supabase = get_supabase_client()
+    result = (
+        supabase.table("projects")
+        .select("story_bible")
+        .eq("id", project_id)
+        .execute()
+    )
+    if not result.data:
+        return
+
+    story_bible = result.data[0].get("story_bible") or {}
+    outline = story_bible.get("outline")
+    if not outline:
+        return
+
+    for part_data in outline.get("parts", []):
+        for chapter_data in part_data.get("chapters", []):
+            for beat_data in chapter_data.get("beats", []):
+                if beat_data.get("beat_id") == beat_id:
+                    beat_data["status"] = new_status
+                    if generation_id:
+                        beat_data["generation_id"] = generation_id
+                    elif clear_generation_id:
+                        beat_data["generation_id"] = None
+
+    story_bible["outline"] = outline
+    supabase.table("projects").update(
+        {"story_bible": story_bible}
+    ).eq("id", project_id).execute()
+
+    logger.info(
+        "[GENERATION] Updated beat %s status to %s (gen: %s)",
+        beat_id, new_status, generation_id,
+    )
+
+
+async def run_beat_generation(
+    user_id: str,
+    project: dict,
+    voice_instruction: str,
+    anti_slop: dict | None,
+    beat_id: str,
+    include_polish: bool = False,
+    additional_context: str | None = None,
+    voice_mode: VoiceMode = VoiceMode.default,
+    voice_model: str | None = None,
+) -> AsyncGenerator[str, None]:
+    """Generate prose for a specific beat from the outline."""
+    outline = (project.get("story_bible") or {}).get("outline")
+    if not outline or not outline.get("locked"):
+        yield sse_event("error", content="Outline must be locked before generating.")
+        return
+
+    beat, chapter, part = find_beat_in_outline(outline, beat_id)
+    if not beat:
+        yield sse_event("error", content=f"Beat {beat_id} not found in outline.")
+        return
+
+    # Mark beat as generating
+    await update_beat_status(project["id"], beat_id, "generating")
+
+    # Get previous beat's output for continuity
+    previous_output = await get_previous_beat_output(outline, beat_id, project["id"])
+
+    # Build prompt from the beat
+    prompt = build_beat_prompt(beat, chapter, part, previous_output, additional_context)
+
+    # Preserve the previous successful scene link on failed regenerates.
+    prior_generation_id = beat.get("generation_id")
+
+    # Run through the main pipeline, watching for terminal events
+    generation_id = None
+    pipeline_succeeded = False
+
+    try:
+        async for event in run_generation_pipeline(
+            user_id=user_id,
+            prompt=prompt,
+            voice_instruction=voice_instruction,
+            anti_slop=anti_slop,
+            project=project,
+            include_polish=include_polish,
+            previous_output=previous_output,
+            voice_mode=voice_mode,
+            voice_model=voice_model,
+        ):
+            # Watch for terminal events to determine success/failure
+            if '"type": "done"' in event:
+                try:
+                    import json as _json
+                    data = _json.loads(event.replace("data: ", "").strip())
+                    generation_id = data.get("metadata", {}).get("generation_id")
+                    pipeline_succeeded = True
+                except Exception:
+                    pass
+            elif '"type": "error"' in event:
+                pipeline_succeeded = False
+            yield event
+
+        # Update beat status based on outcome
+        if pipeline_succeeded and generation_id:
+            await update_beat_status(project["id"], beat_id, "generated", generation_id)
+        elif not pipeline_succeeded:
+            # Pipeline reported an error via SSE — roll back so user can retry.
+            # Only clear generation_id if there was no prior successful scene.
+            logger.warning("[GENERATION] Pipeline error event for beat %s, rolling back", beat_id)
+            rollback_status = "generated" if prior_generation_id else "pending"
+            await update_beat_status(
+                project["id"], beat_id, rollback_status,
+                clear_generation_id=prior_generation_id is None,
+            )
+    except Exception as e:
+        logger.error("[GENERATION] Beat generation exception for %s: %s", beat_id, e)
+        rollback_status = "generated" if prior_generation_id else "pending"
+        await update_beat_status(
+            project["id"], beat_id, rollback_status,
+            clear_generation_id=prior_generation_id is None,
+        )
+        raise

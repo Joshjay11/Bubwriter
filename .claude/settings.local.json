@@ -31,7 +31,17 @@
       "Bash(cp backend/app/config/genre_guardrails.py backend/app/services/genre_guardrails.py)",
       "Bash(rm backend/app/config/genre_guardrails.py)",
       "Bash(rm backend/app/config/__init__.py)",
-      "Bash(rmdir backend/app/config)"
+      "Bash(rmdir backend/app/config)",
+      "Bash(mkdir -p \"C:\\\\dev\\\\Bubwriter\\\\backend\\\\configs\")",
+      "Bash(mkdir -p \"C:\\\\dev\\\\Bubwriter\\\\backend\\\\app\\\\core\")",
+      "Bash(python -m py_compile backend/app/core/features.py)",
+      "Bash(python -m py_compile backend/app/services/structure_templates.py)",
+      "Bash(python -m py_compile backend/app/services/slop_validator.py)",
+      "Bash(python -m py_compile backend/app/prompts/outline_compiler.py)",
+      "Bash(python -m py_compile backend/app/services/outline_service.py)",
+      "Bash(python -m py_compile backend/app/main.py)",
+      "Bash(python -m py_compile backend/app/routers/generation.py)",
+      "Bash(python -m py_compile backend/app/services/generation_pipeline.py)"
     ]
   }
 }

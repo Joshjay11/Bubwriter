@@ -12,13 +12,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.auth.dependencies import get_current_user
+from app.core.features import is_enabled
 from app.models.generation_schemas import (
+    BeatGenerateRequest,
     ContinueRequest,
     GenerateRequest,
     RefineRequest,
 )
 from app.services.generation_pipeline import (
     build_continuation_context,
+    run_beat_generation,
     run_generation_pipeline,
     run_refine_pipeline,
 )
@@ -202,6 +205,48 @@ async def refine_scene(
             anti_slop=profile.get("anti_slop"),
             include_polish=refine_request.include_polish,
             voice_mode=refine_request.voice_mode,
+            voice_model=voice_model,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/from-beat")
+async def generate_from_beat(
+    beat_request: BeatGenerateRequest,
+    user_id: Annotated[str, Depends(get_current_user)],
+) -> StreamingResponse:
+    """Generate prose from a specific outline beat (SSE streaming).
+
+    Requires a locked outline. Builds the prompt automatically from
+    the beat description, previous chapter output, and story bible.
+    """
+    if not is_enabled("beat_driven_generation"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Beat-driven generation is not enabled.",
+        )
+
+    profile = await _load_voice_profile(beat_request.voice_profile_id, user_id)
+    project = await _load_project(beat_request.project_id, user_id)
+
+    voice_model = profile.get("voice_model", "deepseek-v3")
+
+    return StreamingResponse(
+        run_beat_generation(
+            user_id=user_id,
+            project=project,
+            voice_instruction=profile["voice_instruction"],
+            anti_slop=profile.get("anti_slop"),
+            beat_id=beat_request.beat_id,
+            include_polish=beat_request.include_polish,
+            additional_context=beat_request.additional_context,
+            voice_mode=beat_request.voice_mode,
             voice_model=voice_model,
         ),
         media_type="text/event-stream",

@@ -1,0 +1,43 @@
+{
+  "story_outline": {
+    "enabled": true,
+    "description": "Story Architect outline step between brainstorm and voice discovery",
+    "requires": []
+  },
+  "slop_validator": {
+    "enabled": false,
+    "description": "Post-generation anti-slop validation with slop score",
+    "requires": []
+  },
+  "slop_score_display": {
+    "enabled": false,
+    "description": "Show slop score badge on generation cards",
+    "requires": ["slop_validator"]
+  },
+  "beat_driven_generation": {
+    "enabled": true,
+    "description": "Generate from outline beats instead of free-text prompts",
+    "requires": ["story_outline"]
+  },
+  "extraction_loop": {
+    "enabled": true,
+    "description": "Post-generation story bible extraction and suggestions",
+    "requires": []
+  },
+  "knowledge_state": {
+    "enabled": true,
+    "description": "Character knowledge tracking and POV leak detection",
+    "requires": ["extraction_loop"]
+  },
+  "timeline_engine": {
+    "enabled": true,
+    "description": "Timeline tracking and contradiction detection",
+    "requires": ["extraction_loop"]
+  },
+  "voice_consolidation": {
+    "enabled": false,
+    "description": "Background voice profile refinement from generation history",
+    "requires": [],
+    "notes": "Enable after 10+ generations exist per profile"
+  }
+}

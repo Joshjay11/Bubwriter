@@ -329,12 +329,13 @@ export default function ProjectPage() {
   }, [prompt, projectId, selectedProfileId, runGeneration]);
 
   const handleContinue = useCallback(() => {
-    if (!activeSceneId) return;
+    if (!activeSceneId || !selectedProfileId) return;
     runGeneration("/api/generate/continue", {
       project_id: projectId,
-      scene_id: activeSceneId,
+      generation_id: activeSceneId,
+      voice_profile_id: selectedProfileId,
     });
-  }, [activeSceneId, projectId, runGeneration]);
+  }, [activeSceneId, selectedProfileId, projectId, runGeneration]);
 
   const handleRegenerate = useCallback(() => {
     if (!prompt.trim()) return;
@@ -343,20 +344,19 @@ export default function ProjectPage() {
       prompt: prompt.trim(),
     };
     if (selectedProfileId) body.voice_profile_id = selectedProfileId;
-    if (activeSceneId) body.scene_id = activeSceneId;
     runGeneration("/api/generate", body);
-  }, [prompt, projectId, selectedProfileId, activeSceneId, runGeneration]);
+  }, [prompt, projectId, selectedProfileId, runGeneration]);
 
   const handleRefine = useCallback(
     (feedback: string) => {
-      if (!activeSceneId) return;
+      if (!activeSceneId || !selectedProfileId) return;
       runGeneration("/api/generate/refine", {
-        project_id: projectId,
-        scene_id: activeSceneId,
+        generation_id: activeSceneId,
+        voice_profile_id: selectedProfileId,
         feedback,
       });
     },
-    [activeSceneId, projectId, runGeneration]
+    [activeSceneId, selectedProfileId, runGeneration]
   );
 
   // --- Computed values ---

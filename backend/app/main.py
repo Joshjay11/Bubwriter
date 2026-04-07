@@ -17,6 +17,7 @@ from app.routers import (
     conversation_import,
     generation,
     health,
+    outline,
     projects,
     voice_discovery,
     voice_profiles,
@@ -46,3 +47,4 @@ app.include_router(billing.router, prefix="/api")
 app.include_router(analyze_free.router, prefix="/api")
 app.include_router(voice_profiles.router, prefix="/api")
 app.include_router(brainstorm.router, prefix="/api")
+app.include_router(outline.router, prefix="/api")

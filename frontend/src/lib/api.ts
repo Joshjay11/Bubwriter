@@ -178,6 +178,20 @@ export async function apiConversationImport(
 
 // --- Generation Stream ---
 
+export interface SlopScoreResult {
+  passed: boolean;
+  violation_count: number;
+  violations: SlopViolation[];
+  slop_score: number;
+  word_count: number;
+}
+
+export interface SlopViolation {
+  type: string;
+  matches: string[];
+  count: number;
+}
+
 export interface GenerationEvent {
   type:
     | "stage"
@@ -185,12 +199,13 @@ export interface GenerationEvent {
     | "token"
     | "polish_complete"
     | "bible_suggestions"
+    | "slop_score"
     | "done"
     | "error";
   stage?: string;
   message?: string;
   content?: string;
-  data?: string;
+  data?: string | SlopScoreResult;
   suggestions?: ExtractionSuggestions;
   metadata?: {
     word_count: number;
@@ -637,4 +652,99 @@ export async function evaluateBrainstorm(
       body: JSON.stringify({ session_id: sessionId }),
     }
   );
+}
+
+// --- Outline API ---
+
+export interface OutlineBeat {
+  beat_id: string;
+  template_beat: string;
+  description: string;
+  pov_character: string | null;
+  estimated_words: number;
+  status: "pending" | "generating" | "generated" | "revised";
+  generation_id: string | null;
+}
+
+export interface OutlineChapter {
+  chapter_number: number;
+  title: string;
+  beats: OutlineBeat[];
+}
+
+export interface OutlinePart {
+  part_number: number;
+  title: string;
+  chapters: OutlineChapter[];
+}
+
+export interface Outline {
+  structure_template: string;
+  structure_name: string;
+  total_chapters: number;
+  parts: OutlinePart[];
+  locked: boolean;
+  locked_at: string | null;
+  genre_recommendation?: string;
+}
+
+export interface StructureTemplate {
+  name: string;
+  description: string;
+  beat_count: number;
+}
+
+export async function fetchOutlineTemplates(): Promise<
+  Record<string, StructureTemplate>
+> {
+  const data = await apiFetch<{ templates: Record<string, StructureTemplate> }>(
+    "/api/outline/templates"
+  );
+  return data.templates;
+}
+
+export async function compileOutline(
+  projectId: string,
+  body: {
+    brainstorm_decisions?: string[];
+    structure_override?: string;
+  }
+): Promise<Outline> {
+  const data = await apiFetch<{ outline: Outline }>(
+    `/api/projects/${projectId}/outline/compile`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    }
+  );
+  return data.outline;
+}
+
+export async function fetchOutline(projectId: string): Promise<Outline> {
+  const data = await apiFetch<{ outline: Outline }>(
+    `/api/projects/${projectId}/outline`
+  );
+  return data.outline;
+}
+
+export async function updateOutline(
+  projectId: string,
+  outline: Outline
+): Promise<Outline> {
+  const data = await apiFetch<{ outline: Outline }>(
+    `/api/projects/${projectId}/outline`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ outline }),
+    }
+  );
+  return data.outline;
+}
+
+export async function lockOutline(projectId: string): Promise<Outline> {
+  const data = await apiFetch<{ outline: Outline }>(
+    `/api/projects/${projectId}/outline/lock`,
+    { method: "POST" }
+  );
+  return data.outline;
 }
