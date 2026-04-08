@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export default function SignupPage() {
+function SignupContent() {
   const searchParams = useSearchParams();
   const [pendingConcept, setPendingConcept] = useState(false);
 
@@ -56,5 +56,19 @@ export default function SignupPage() {
         </button>
       </div>
     </main>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center">
+          <p className="text-foreground/70">Loading…</p>
+        </main>
+      }
+    >
+      <SignupContent />
+    </Suspense>
   );
 }
