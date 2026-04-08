@@ -85,6 +85,29 @@ class CreateProjectFromDnaResponse(BaseModel):
     voice_profile_id: str
 
 
+class DnaProfileListItem(BaseModel):
+    id: str
+    profile_name: str | None
+    dna_profile: dict
+    concept_count: int
+    projects_created_count: int
+    created_at: str
+
+
+class DnaProfileDetail(BaseModel):
+    id: str
+    profile_name: str | None
+    dna_profile: dict
+    concepts: list[dict]
+    session_turns: list[dict]
+    created_at: str
+    updated_at: str
+
+
+class RegenerateConceptsResponse(BaseModel):
+    concepts: list[dict]
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -549,3 +572,206 @@ async def create_project_from_dna(
         project_id=project_id,
         voice_profile_id=voice_profile_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. Persistent DNA profile management (auth required)
+# ---------------------------------------------------------------------------
+
+
+def _load_dna_profile_row(profile_id: str, user_id: str) -> dict:
+    """Load a story_dna_profiles row, enforcing ownership. 404 if missing."""
+    supabase = get_supabase_client()
+    try:
+        result = (
+            supabase.table("story_dna_profiles")
+            .select("*")
+            .eq("id", profile_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception as e:
+        logger.error("[STORY_DNA] failed to load profile %s: %s", profile_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not load Story DNA profile.",
+        )
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Story DNA profile not found.",
+        )
+    return result.data[0]
+
+
+@router.get("/profiles", response_model=list[DnaProfileListItem])
+async def list_dna_profiles(
+    user_id: Annotated[str, Depends(get_current_user)],
+) -> list[DnaProfileListItem]:
+    """List all persistent Story DNA profiles for the authenticated user."""
+    supabase = get_supabase_client()
+
+    try:
+        result = (
+            supabase.table("story_dna_profiles")
+            .select("id, profile_name, dna_profile, concepts, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+    except Exception as e:
+        logger.error("[STORY_DNA] list profiles failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not load your Story DNA profiles.",
+        )
+
+    rows = result.data or []
+    if not rows:
+        return []
+
+    # Batch-fetch project counts grouped by story_dna_profile_ref.dna_profile_id
+    # We can't easily group on a JSONB path through the supabase-py client, so
+    # fetch all this user's projects with a story_dna ref and tally in Python.
+    project_counts: dict[str, int] = {}
+    try:
+        proj_result = (
+            supabase.table("projects")
+            .select("story_bible")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        for p in proj_result.data or []:
+            ref = (p.get("story_bible") or {}).get("story_dna_profile_ref") or {}
+            ref_id = ref.get("dna_profile_id")
+            if ref_id:
+                project_counts[ref_id] = project_counts.get(ref_id, 0) + 1
+    except Exception as e:
+        logger.warning("[STORY_DNA] project count tally failed: %s", e)
+
+    items: list[DnaProfileListItem] = []
+    for row in rows:
+        items.append(
+            DnaProfileListItem(
+                id=row["id"],
+                profile_name=row.get("profile_name"),
+                dna_profile=row.get("dna_profile") or {},
+                concept_count=len(row.get("concepts") or []),
+                projects_created_count=project_counts.get(row["id"], 0),
+                created_at=row["created_at"],
+            )
+        )
+    return items
+
+
+@router.get("/profiles/{dna_profile_id}", response_model=DnaProfileDetail)
+async def get_dna_profile(
+    dna_profile_id: str,
+    user_id: Annotated[str, Depends(get_current_user)],
+) -> DnaProfileDetail:
+    """Get a single persistent Story DNA profile in full."""
+    row = _load_dna_profile_row(dna_profile_id, user_id)
+    return DnaProfileDetail(
+        id=row["id"],
+        profile_name=row.get("profile_name"),
+        dna_profile=row.get("dna_profile") or {},
+        concepts=row.get("concepts") or [],
+        session_turns=row.get("session_turns") or [],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+@router.delete("/profiles/{dna_profile_id}")
+async def delete_dna_profile(
+    dna_profile_id: str,
+    user_id: Annotated[str, Depends(get_current_user)],
+) -> dict[str, bool]:
+    """Delete a persistent Story DNA profile.
+
+    Projects already created from this DNA are NOT touched — they keep
+    their concept_origin in story_bible and continue to function.
+    """
+    _load_dna_profile_row(dna_profile_id, user_id)
+    supabase = get_supabase_client()
+    try:
+        supabase.table("story_dna_profiles").delete().eq("id", dna_profile_id).eq("user_id", user_id).execute()
+    except Exception as e:
+        logger.error("[STORY_DNA] delete profile %s failed: %s", dna_profile_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not delete Story DNA profile.",
+        )
+    logger.info("[STORY_DNA] deleted profile %s for user %s", dna_profile_id, user_id)
+    return {"deleted": True}
+
+
+@router.post(
+    "/profiles/{dna_profile_id}/regenerate-concepts",
+    response_model=RegenerateConceptsResponse,
+)
+async def regenerate_concepts(
+    dna_profile_id: str,
+    user_id: Annotated[str, Depends(get_current_user)],
+) -> RegenerateConceptsResponse:
+    """Re-run the concept generator against the stored session turns.
+
+    Appends the new concepts to the existing concepts array (with a fresh
+    generation timestamp on each new concept) so previously-saved concepts
+    are preserved. Concept IDs are kept unique across the full array.
+    """
+    row = _load_dna_profile_row(dna_profile_id, user_id)
+    session_turns = row.get("session_turns") or []
+    if not session_turns:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This Story DNA profile has no session transcript to regenerate from.",
+        )
+
+    try:
+        _, new_concepts = await synthesize_dna(session_turns)
+    except Exception as e:
+        logger.error("[STORY_DNA] regenerate-concepts synthesis failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not generate new concepts — please try again.",
+        )
+
+    existing_concepts = row.get("concepts") or []
+    used_ids = {c.get("concept_id") for c in existing_concepts}
+    next_index = len(existing_concepts) + 1
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    appended: list[dict] = []
+    for c in new_concepts:
+        # Always assign a fresh sequential id to avoid collisions with
+        # earlier generations — concept_001 may already exist.
+        while True:
+            new_id = f"concept_{next_index:03d}"
+            next_index += 1
+            if new_id not in used_ids:
+                used_ids.add(new_id)
+                break
+        c["concept_id"] = new_id
+        c["generated_at"] = generated_at
+        appended.append(c)
+
+    merged = existing_concepts + appended
+
+    supabase = get_supabase_client()
+    try:
+        supabase.table("story_dna_profiles").update(
+            {
+                "concepts": merged,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", dna_profile_id).eq("user_id", user_id).execute()
+    except Exception as e:
+        logger.error("[STORY_DNA] regenerate-concepts persist failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save the new concepts — please try again.",
+        )
+
+    logger.info("[STORY_DNA] regenerated %d concepts for profile %s", len(appended), dna_profile_id)
+    return RegenerateConceptsResponse(concepts=appended)
