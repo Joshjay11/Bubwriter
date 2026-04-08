@@ -8,11 +8,14 @@ so the user can complete signup and migrate the session afterwards
 
 import json
 import logging
+from datetime import datetime, timezone
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.auth.dependencies import get_current_user
 from app.models.story_dna_session import (
     check_rate_limit,
     create_session,
@@ -24,6 +27,7 @@ from app.prompts.story_dna_conductor import (
 )
 from app.services import llm_service
 from app.services.story_dna_service import synthesize_dna
+from app.services.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +62,27 @@ class FinalizeResponse(BaseModel):
     story_dna_profile: dict
     concepts: list[dict]
     cta_paywall: str
+
+
+class MigrateSessionRequest(BaseModel):
+    session_id: str
+    profile_name: str | None = None
+
+
+class MigrateSessionResponse(BaseModel):
+    dna_profile_id: str
+    status: str
+
+
+class CreateProjectFromDnaRequest(BaseModel):
+    dna_profile_id: str
+    concept_id: str
+    project_title: str | None = None
+
+
+class CreateProjectFromDnaResponse(BaseModel):
+    project_id: str
+    voice_profile_id: str
 
 
 # ---------------------------------------------------------------------------
@@ -286,4 +311,241 @@ async def finalize_dna_session(payload: FinalizeRequest) -> FinalizeResponse:
         story_dna_profile=profile,
         concepts=concepts,
         cta_paywall="Pick a concept and build it into a novel with BUB Writer",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 4. Migrate anonymous session → persistent storage (auth required)
+# ---------------------------------------------------------------------------
+
+
+def _default_profile_name() -> str:
+    return f"Story DNA — {datetime.now(timezone.utc).strftime('%B %d, %Y')}"
+
+
+@router.post("/migrate-session", response_model=MigrateSessionResponse)
+async def migrate_session(
+    payload: MigrateSessionRequest,
+    user_id: Annotated[str, Depends(get_current_user)],
+) -> MigrateSessionResponse:
+    """Persist a finalized anonymous session to story_dna_profiles.
+
+    Idempotent per (session, user): re-calling returns the existing
+    dna_profile_id rather than creating a duplicate row.
+    """
+    session = get_session(payload.session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found or expired — please retake the DNA test.",
+        )
+    if not session.finalized or not session.dna_profile or session.concepts is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session not yet finalized.",
+        )
+
+    # Idempotency — same user re-calling gets the same profile id back
+    existing_id = session.migrated_user_ids.get(user_id)
+    if existing_id:
+        return MigrateSessionResponse(dna_profile_id=existing_id, status="already_migrated")
+
+    profile_name = payload.profile_name or _default_profile_name()
+
+    supabase = get_supabase_client()
+    insert_data = {
+        "user_id": user_id,
+        "profile_name": profile_name,
+        "dna_profile": session.dna_profile,
+        "session_turns": session.turns,
+        "concepts": session.concepts,
+    }
+
+    try:
+        result = supabase.table("story_dna_profiles").insert(insert_data).execute()
+        dna_profile_id = result.data[0]["id"]
+    except Exception as e:
+        logger.error("[STORY_DNA] migrate-session insert failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save your Story DNA profile — please try again.",
+        )
+
+    session.migrated_user_ids[user_id] = dna_profile_id
+    logger.info("[STORY_DNA] migrated session %s → profile %s for user %s", session.session_id, dna_profile_id, user_id)
+
+    return MigrateSessionResponse(dna_profile_id=dna_profile_id, status="migrated")
+
+
+# ---------------------------------------------------------------------------
+# 5. Create project from persistent DNA profile (auth required)
+# ---------------------------------------------------------------------------
+
+
+def _build_voice_instruction_from_signal(voice_signal: dict) -> str:
+    """Cheap, deterministic compiler — turns a voice_signal dict into a
+    plain-text starter system prompt for downstream Voice generation.
+
+    This is a starter, NOT a finished Voice DNA Profile. It will be
+    refined in the background as the user brainstorms (Phase 5).
+    """
+    if not voice_signal:
+        return (
+            "You are the writer. Write in a natural, grounded prose voice. "
+            "Show, don't tell. Trust the reader. Avoid cliché."
+        )
+
+    vocab = voice_signal.get("vocabulary_tier") or "conversational"
+    rhythm = voice_signal.get("sentence_rhythm") or "balanced"
+    sensory = voice_signal.get("sensory_bias") or "mixed"
+    temp = voice_signal.get("emotional_temperature") or "measured"
+    humor = voice_signal.get("humor_presence") or "none"
+    notes = voice_signal.get("notes") or ""
+
+    parts = [
+        "You are the writer. This is a starter voice — it will sharpen as the writer keeps working with BUB Writer.",
+        "",
+        "VOICE SIGNATURE",
+        f"- Vocabulary: {vocab}",
+        f"- Sentence rhythm: {rhythm}",
+        f"- Sensory bias: {sensory} detail",
+        f"- Emotional temperature: {temp}",
+        f"- Humor: {humor}",
+    ]
+    if notes:
+        parts.append(f"- Notes: {notes}")
+    parts.extend(
+        [
+            "",
+            "RULES",
+            "- Match the rhythm and vocabulary tier above. Do not drift into generic literary register.",
+            "- Lead with the sensory bias when grounding scenes.",
+            "- Show, don't tell. Trust the reader.",
+            "- Avoid cliché, throat-clearing, and writerly filler.",
+        ]
+    )
+    return "\n".join(parts)
+
+
+def _literary_dna_from_signal(voice_signal: dict) -> dict:
+    """Map a voice_signal dict onto the LiteraryDNA-shaped JSON we store."""
+    if not voice_signal:
+        return {}
+    return {
+        "vocabulary_tier": voice_signal.get("vocabulary_tier"),
+        "sentence_rhythm": voice_signal.get("sentence_rhythm"),
+        "sensory_mode": voice_signal.get("sensory_bias"),
+        "emotional_register": voice_signal.get("emotional_temperature"),
+        "humor_style": voice_signal.get("humor_presence"),
+        "notable_patterns": [voice_signal["notes"]] if voice_signal.get("notes") else [],
+    }
+
+
+@router.post("/create-project", response_model=CreateProjectFromDnaResponse)
+async def create_project_from_dna(
+    payload: CreateProjectFromDnaRequest,
+    user_id: Annotated[str, Depends(get_current_user)],
+) -> CreateProjectFromDnaResponse:
+    """Create a new project + starter voice profile from a persistent DNA profile.
+
+    1. Loads the dna profile row (RLS-enforced ownership via user_id filter).
+    2. Finds the chosen concept by concept_id.
+    3. Creates a starter voice_profiles row with profile_source='dna_analyzer'.
+    4. Creates the projects row, pre-populated with concept context and the
+       new voice profile id.
+    """
+    supabase = get_supabase_client()
+
+    # 1. Load DNA profile (RLS + explicit user_id filter for safety)
+    try:
+        dna_result = (
+            supabase.table("story_dna_profiles")
+            .select("*")
+            .eq("id", payload.dna_profile_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception as e:
+        logger.error("[STORY_DNA] failed to load dna profile: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not load your Story DNA profile.",
+        )
+
+    if not dna_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Story DNA profile not found.",
+        )
+
+    dna_row = dna_result.data[0]
+    dna_profile = dna_row.get("dna_profile") or {}
+    concepts = dna_row.get("concepts") or []
+
+    # 2. Locate chosen concept
+    concept = next((c for c in concepts if c.get("concept_id") == payload.concept_id), None)
+    if concept is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Concept not found in this Story DNA profile.",
+        )
+
+    voice_signal = dna_profile.get("voice_signal") or {}
+
+    # 3. Create starter voice profile
+    voice_insert = {
+        "user_id": user_id,
+        "profile_name": "From your Story DNA session",
+        "literary_dna": _literary_dna_from_signal(voice_signal),
+        "influences": {},
+        "anti_slop": {},
+        "voice_instruction": _build_voice_instruction_from_signal(voice_signal),
+        "voice_summary": dna_profile.get("genre_sweet_spot") or "",
+        "profile_source": "dna_analyzer",
+    }
+    try:
+        vp_result = supabase.table("voice_profiles").insert(voice_insert).execute()
+        voice_profile_id = vp_result.data[0]["id"]
+    except Exception as e:
+        logger.error("[STORY_DNA] starter voice profile insert failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not create your starter voice profile.",
+        )
+
+    # 4. Create project
+    project_insert = {
+        "user_id": user_id,
+        "title": payload.project_title or concept.get("working_title") or "Untitled",
+        "genre": concept.get("genre"),
+        "distribution_format": concept.get("distribution_format"),
+        "voice_profile_id": voice_profile_id,
+        "story_bible": {
+            "concept_origin": concept,
+            "story_dna_profile_ref": {
+                "dna_profile_id": payload.dna_profile_id,
+                "used_concept_id": payload.concept_id,
+            },
+        },
+    }
+    try:
+        proj_result = supabase.table("projects").insert(project_insert).execute()
+        project_id = proj_result.data[0]["id"]
+    except Exception as e:
+        logger.error("[STORY_DNA] project insert failed: %s", e)
+        # Best-effort cleanup of the orphan voice profile
+        try:
+            supabase.table("voice_profiles").delete().eq("id", voice_profile_id).execute()
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not create your project.",
+        )
+
+    logger.info("[STORY_DNA] created project %s + voice profile %s from dna %s", project_id, voice_profile_id, payload.dna_profile_id)
+
+    return CreateProjectFromDnaResponse(
+        project_id=project_id,
+        voice_profile_id=voice_profile_id,
     )
