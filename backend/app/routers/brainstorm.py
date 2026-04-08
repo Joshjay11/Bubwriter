@@ -6,6 +6,7 @@ Endpoints:
   POST /brainstorm/evaluate  — Idea viability gate assessment
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -26,6 +27,12 @@ from app.prompts.brainstorm_conductor import (
     EVALUATE_SYSTEM,
 )
 from app.services import llm_service
+from app.services.voice_extraction_service import (
+    refine_project_voice_from_brainstorm,
+)
+
+# Trigger background voice extraction every N assistant turns in /respond.
+VOICE_EXTRACTION_INTERVAL = 5
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +266,22 @@ async def brainstorm_respond(
             {"role": "assistant", "content": clean_response}
         )
         session.questions_asked += 1
+
+        # Background voice refinement — fire-and-forget every N turns.
+        # Never block the SSE stream; refine_project_voice_from_brainstorm
+        # is itself best-effort and swallows its own errors.
+        if (
+            session.project_id
+            and session.questions_asked > 0
+            and session.questions_asked % VOICE_EXTRACTION_INTERVAL == 0
+        ):
+            asyncio.create_task(
+                refine_project_voice_from_brainstorm(
+                    project_id=session.project_id,
+                    user_id=user_id,
+                    conversation_history=list(session.conversation_history),
+                )
+            )
 
         yield f"data: {json.dumps({'type': 'done', 'questions_asked': session.questions_asked})}\n\n"
 
