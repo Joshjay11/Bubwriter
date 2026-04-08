@@ -41,7 +41,8 @@
       "Bash(python -m py_compile backend/app/services/outline_service.py)",
       "Bash(python -m py_compile backend/app/main.py)",
       "Bash(python -m py_compile backend/app/routers/generation.py)",
-      "Bash(python -m py_compile backend/app/services/generation_pipeline.py)"
+      "Bash(python -m py_compile backend/app/services/generation_pipeline.py)",
+      "Bash(python -c \"from app.main import app; print\\('OK', [r.path for r in app.routes if '/story-dna' in r.path]\\)\")"
     ]
   }
 }
