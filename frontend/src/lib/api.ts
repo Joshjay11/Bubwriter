@@ -694,6 +694,151 @@ export interface StructureTemplate {
   beat_count: number;
 }
 
+// --- Story DNA Analyzer (Phase 2-4) ---
+
+export interface StoryDnaConcept {
+  concept_id: string;
+  working_title: string;
+  hook: string;
+  premise: string;
+  genre: string;
+  distribution_format: string;
+  why_this_fits_your_dna: string;
+  generated_at?: string;
+}
+
+export interface StoryDnaProfile {
+  genre_sweet_spot?: string;
+  thematic_obsessions?: string[];
+  character_instincts?: string;
+  world_building_style?: string;
+  anti_preferences?: string[];
+  influences_decoded?: string;
+  voice_signal?: Record<string, string>;
+}
+
+export interface StoryDnaStartResponse {
+  session_id: string;
+  first_question: string;
+  question_count: number;
+}
+
+export interface StoryDnaFinalizeResponse {
+  session_id: string;
+  story_dna_profile: StoryDnaProfile;
+  concepts: StoryDnaConcept[];
+  cta_paywall: string;
+}
+
+export interface StoryDnaRespondDoneData {
+  ready_for_finalize: boolean;
+  question_count: number;
+}
+
+async function anonFetch<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  if (!response.ok) {
+    const error: ApiError = await response.json().catch(() => ({
+      detail: `Request failed with status ${response.status}`,
+    }));
+    throw new Error(error.detail);
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function startStoryDna(): Promise<StoryDnaStartResponse> {
+  return anonFetch<StoryDnaStartResponse>("/api/story-dna/start", {});
+}
+
+export async function finalizeStoryDna(
+  sessionId: string
+): Promise<StoryDnaFinalizeResponse> {
+  return anonFetch<StoryDnaFinalizeResponse>("/api/story-dna/finalize", {
+    session_id: sessionId,
+  });
+}
+
+/** Anonymous SSE stream for /api/story-dna/respond. */
+export async function streamStoryDnaRespond(
+  sessionId: string,
+  answer: string,
+  onToken: (content: string) => void,
+  onDone: (data: StoryDnaRespondDoneData) => void
+): Promise<void> {
+  const response = await fetch(`${API_URL}/api/story-dna/respond`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, answer }),
+  });
+  if (!response.ok) {
+    const error: ApiError = await response.json().catch(() => ({
+      detail: `Request failed with status ${response.status}`,
+    }));
+    throw new Error(error.detail);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.type === "token" && data.content) {
+          onToken(data.content);
+        } else if (data.type === "done") {
+          onDone({
+            ready_for_finalize: data.ready_for_finalize ?? false,
+            question_count: data.question_count ?? 0,
+          });
+          return;
+        } else if (data.type === "error") {
+          throw new Error(data.content ?? "Story DNA error");
+        }
+      } catch (e) {
+        if (e instanceof SyntaxError) continue;
+        throw e;
+      }
+    }
+  }
+}
+
+export async function migrateStoryDnaSession(
+  sessionId: string,
+  profileName?: string
+): Promise<{ dna_profile_id: string; status: string }> {
+  return apiFetch<{ dna_profile_id: string; status: string }>(
+    "/api/story-dna/migrate-session",
+    {
+      method: "POST",
+      body: JSON.stringify({ session_id: sessionId, profile_name: profileName }),
+    }
+  );
+}
+
+export async function createProjectFromDna(body: {
+  dna_profile_id: string;
+  concept_id: string;
+  project_title?: string;
+}): Promise<{ project_id: string; voice_profile_id: string }> {
+  return apiFetch<{ project_id: string; voice_profile_id: string }>(
+    "/api/story-dna/create-project",
+    { method: "POST", body: JSON.stringify(body) }
+  );
+}
+
+// --- Outline (existing) ---
+
 export async function fetchOutlineTemplates(): Promise<
   Record<string, StructureTemplate>
 > {
